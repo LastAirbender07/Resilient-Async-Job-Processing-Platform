@@ -1,2 +1,4 @@
 .git
 .qodo
+/backend/.venv
+__pycache__
