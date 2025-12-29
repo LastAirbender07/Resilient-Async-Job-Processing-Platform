@@ -22,21 +22,29 @@ JOBS = {}
     status_code=status.HTTP_201_CREATED,
 )
 def create_job(request: JobCreateRequest):
-    job = Job(
-        input_file_path=request.input_file_path,
-        max_retries=request.max_retries,
-    )
+    try:
+        job = Job(
+            input_file_path=request.input_file_path,
+            max_retries=request.max_retries,
+        )
 
-    job.transition(JobStatus.QUEUED)
+        job.transition(JobStatus.QUEUED)
 
-    JOBS[str(job.job_id)] = job
+        JOBS[str(job.job_id)] = job
 
-    logger.info(
-        "Job created",
-        extra={"job_id": str(job.job_id)},
-    )
+        logger.info(
+            "Job created",
+            extra={"job_id": str(job.job_id)},
+        )
 
-    return JobCreateResponse(job_id=job.job_id, status=job.status)
+        return JobCreateResponse(job_id=job.job_id, status=job.status)
+    
+    except Exception as e:
+        logger.error(
+            "Failed to create job",
+            extra={"error": str(e)},
+        )
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 @router.get(

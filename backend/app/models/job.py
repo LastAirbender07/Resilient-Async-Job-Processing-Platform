@@ -53,7 +53,7 @@ class Job:
             raise ValueError(f"Invalid transition {self.status} → {new_status}")
 
         self.status = new_status
-        self.updated_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds") + "Z"
+        self.updated_at = datetime.now(timezone.utc)
 
         if new_status == JobStatus.FAILED:
             self.retry_count += 1
