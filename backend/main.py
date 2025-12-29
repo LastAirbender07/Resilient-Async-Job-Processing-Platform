@@ -3,6 +3,8 @@ from app.core.logging import setup_logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes.jobs import router as jobs_router
+from app.db.base import Base
+from app.db.session import engine
 
 logger = setup_logging()
 app = FastAPI(title="Resilient Async Job Processing Platform", version="0.1.0")
@@ -17,6 +19,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# TEMPORARY – REMOVE AFTER ALEMBIC
+Base.metadata.create_all(bind=engine)
 
 # --- Include API Routes ---
 app.include_router(jobs_router) 

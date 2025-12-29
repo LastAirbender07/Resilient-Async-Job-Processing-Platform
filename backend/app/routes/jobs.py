@@ -93,10 +93,7 @@ def get_job(
 
     return JobStatusResponse(
         job_id=job.job_id,
-        user_id=job.user_id,
         status=job.status,
-        input_file_path=job.input_file_path,
-        output_file_path=job.output_file_path,
         retry_count=job.retry_count,
         max_retries=job.max_retries,
         error_message=job.error_message,
