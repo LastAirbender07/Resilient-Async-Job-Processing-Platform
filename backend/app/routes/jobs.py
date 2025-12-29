@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 from uuid import UUID
 
 from app.schemas.job import (
@@ -6,14 +7,14 @@ from app.schemas.job import (
     JobCreateResponse,
     JobStatusResponse,
 )
-from app.models.job import Job, JobStatus
+from app.schemas.job_status import JobStatus
+from app.models.job import Job
+from app.repositories.job_repository import JobRepository
+from app.db.session import get_db
 from app.core.logging import setup_logging
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 logger = setup_logging()
-
-# Temporary in-memory store
-JOBS = {}
 
 
 @router.post(
@@ -21,39 +22,84 @@ JOBS = {}
     response_model=JobCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_job(request: JobCreateRequest):
+def create_job(
+    request: JobCreateRequest,
+    db: Session = Depends(get_db),
+):
     try:
+        repo = JobRepository(db)
+
+        # Create domain job
         job = Job(
+            user_id="dummy-user",  # placeholder until auth is added
             input_file_path=request.input_file_path,
             max_retries=request.max_retries,
         )
 
+        # Initial lifecycle transition
         job.transition(JobStatus.QUEUED)
 
-        JOBS[str(job.job_id)] = job
+        # Persist job
+        job = repo.create_job(job)
 
         logger.info(
             "Job created",
             extra={"job_id": str(job.job_id)},
         )
 
-        return JobCreateResponse(job_id=job.job_id, status=job.status)
-    
+        return JobCreateResponse(
+            job_id=job.job_id,
+            status=job.status,
+        )
+
+    except ValueError as e:
+        # Domain errors (invalid state transitions, etc.)
+        logger.warning(
+            "Invalid job creation request",
+            extra={"error": str(e)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
     except Exception as e:
         logger.error(
             "Failed to create job",
             extra={"error": str(e)},
         )
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.get(
     "/{job_id}",
     response_model=JobStatusResponse,
 )
-def get_job(job_id: UUID):
-    job = JOBS.get(str(job_id))
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+def get_job(
+    job_id: UUID,
+    db: Session = Depends(get_db),
+):
+    repo = JobRepository(db)
 
-    return JobStatusResponse(**job.__dict__)
+    job = repo.get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    return JobStatusResponse(
+        job_id=job.job_id,
+        user_id=job.user_id,
+        status=job.status,
+        input_file_path=job.input_file_path,
+        output_file_path=job.output_file_path,
+        retry_count=job.retry_count,
+        max_retries=job.max_retries,
+        error_message=job.error_message,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
