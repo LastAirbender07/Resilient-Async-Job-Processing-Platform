@@ -116,7 +116,7 @@ def list_jobs(
     total = repo.count_jobs(user_id=user_id)
 
     return JobListResponse(
-        jobs=[
+        items=[
             JobStatusResponse(
                 job_id=job.job_id,
                 status=job.status,
