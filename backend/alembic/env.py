@@ -8,6 +8,9 @@ from alembic import context
 from app.db.base import Base
 from app.core.settings import settings
 
+# Import all ORM models here so Alembic can discover them
+from app.db.models import JobORM  # noqa: E402,F401
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -76,7 +79,10 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,           # Detect type changes
+            compare_server_default=True  # Detect server default changes
         )
 
         with context.begin_transaction():

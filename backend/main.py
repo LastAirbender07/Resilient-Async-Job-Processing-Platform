@@ -21,7 +21,7 @@ app.add_middleware(
 )
 
 # TEMPORARY – REMOVE AFTER ALEMBIC
-Base.metadata.create_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
 
 # --- Include API Routes ---
 app.include_router(jobs_router) 

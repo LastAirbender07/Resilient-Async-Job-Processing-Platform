@@ -20,7 +20,8 @@ RUN apt-get update && apt-get install -y \
 COPY pyproject.toml uv.lock* ./
 
 # Install dependencies
-RUN uv sync --frozen --no-cache
+# RUN uv sync --frozen --no-cache
+RUN pip install --upgrade pip && pip install .
 
 # Then copy rest of the app (improves layer cache)
 COPY . .
