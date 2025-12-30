@@ -28,4 +28,4 @@ COPY . .
 EXPOSE 5001
 
 # Default CMD
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5001"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5001"]
