@@ -49,3 +49,11 @@ class JobRepository:
             .all()
         )
         return [orm_to_domain(orm) for orm in orms]
+    
+    def count_jobs(self, user_id: str) -> int:
+        return (
+            self.db.query(JobORM)
+            .filter(JobORM.user_id == user_id)
+            .count()
+        )
+

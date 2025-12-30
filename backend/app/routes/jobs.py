@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from uuid import UUID
 
@@ -6,6 +6,7 @@ from app.schemas.job import (
     JobCreateRequest,
     JobCreateResponse,
     JobStatusResponse,
+    JobListResponse,
 )
 from app.schemas.job_status import JobStatus
 from app.models.job import Job
@@ -99,4 +100,35 @@ def get_job(
         error_message=job.error_message,
         created_at=job.created_at,
         updated_at=job.updated_at,
+    )
+
+@router.get("",response_model=JobListResponse,)
+def list_jobs(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    repo = JobRepository(db)
+
+    user_id = "dummy-user"  # placeholder until auth is added
+
+    jobs = repo.list_jobs(user_id=user_id, limit=limit, offset=offset)
+    total = repo.count_jobs(user_id=user_id)
+
+    return JobListResponse(
+        jobs=[
+            JobStatusResponse(
+                job_id=job.job_id,
+                status=job.status,
+                retry_count=job.retry_count,
+                max_retries=job.max_retries,
+                error_message=job.error_message,
+                created_at=job.created_at,
+                updated_at=job.updated_at,
+            )
+            for job in jobs
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
