@@ -37,9 +37,6 @@ def create_job(
             max_retries=request.max_retries,
         )
 
-        # Initial lifecycle transition
-        job.transition(JobStatus.QUEUED)
-
         # Persist job
         job = repo.create_job(job)
 
@@ -60,7 +57,7 @@ def create_job(
             extra={"error": str(e)},
         )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(e),
         )
 

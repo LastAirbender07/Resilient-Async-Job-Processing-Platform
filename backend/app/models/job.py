@@ -25,8 +25,8 @@ class Job:
 
     error_message: Optional[str] = None
 
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=datetime.now(timezone.utc))
 
     def can_transition_to(self, new_status: JobStatus) -> bool:
         allowed = {
@@ -59,5 +59,5 @@ class Job:
             self.retry_count += 1
             self.error_message = error_message
 
-        if self.retry_count >= self.max_retries:
-            self.status = JobStatus.DEAD
+        # if self.retry_count >= self.max_retries:
+        #     self.status = JobStatus.DEAD
