@@ -20,7 +20,7 @@ services:
 
   backend:
     # build: .
-    image: jayaraj0781/resilient-async-job-processing-platform-backend
+    image: jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0
     container_name: resilient-backend
     entrypoint: ["/app/entrypoint.sh"] # Use entrypoint fpr local development, for k8s use init containers
     command: uv run uvicorn main:app --host 0.0.0.0 --port 5001

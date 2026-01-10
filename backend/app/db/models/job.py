@@ -5,6 +5,8 @@ from sqlalchemy import (
     DateTime,
     Enum,
     Text,
+    Index,
+    CheckConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
@@ -16,6 +18,38 @@ import uuid
 class JobORM(Base):
     __tablename__ = "jobs"
 
+    __table_args__ = (
+        # --- CHECK CONSTRAINTS ---
+        CheckConstraint(
+            "retry_count >= 0",
+            name="ck_jobs_retry_count_non_negative",
+        ),
+        CheckConstraint(
+            "max_retries >= 0",
+            name="ck_jobs_max_retries_non_negative",
+        ),
+        CheckConstraint(
+            "retry_count <= max_retries",
+            name="ck_jobs_retry_count_lte_max_retries",
+        ),
+
+        # --- INDEXES ---
+        Index(
+            "ix_jobs_status",
+            "status",
+        ),
+        Index(
+            "ix_jobs_status_created_at",
+            "status",
+            "created_at",
+        ),
+        Index(
+            "ix_jobs_user_id_created_at",
+            "user_id",
+            "created_at",
+        ),
+    )
+
     job_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     user_id = Column(String, nullable=False)
@@ -23,7 +57,6 @@ class JobORM(Base):
     status = Column(
         Enum(JobStatus, name="job_status"),
         nullable=False,
-        index=True,
     )
 
     input_file_path = Column(String, nullable=False)
