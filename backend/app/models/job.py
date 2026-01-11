@@ -4,6 +4,9 @@ from uuid import UUID, uuid4
 from typing import Optional
 from app.schemas.job_status import JobStatus
 
+def utc_now():
+    return datetime.now(timezone.utc)
+
 
 @dataclass
 class Job:
@@ -25,8 +28,8 @@ class Job:
 
     error_message: Optional[str] = None
 
-    created_at: datetime = field(default_factory=datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=utc_now)
+    updated_at: datetime = field(default_factory=utc_now)
 
     def can_transition_to(self, new_status: JobStatus) -> bool:
         allowed = {
@@ -53,7 +56,7 @@ class Job:
             raise ValueError(f"Invalid transition {self.status} → {new_status}")
 
         self.status = new_status
-        self.updated_at = datetime.now(timezone.utc)
+        self.updated_at = utc_now()
 
         if new_status == JobStatus.FAILED:
             self.retry_count += 1

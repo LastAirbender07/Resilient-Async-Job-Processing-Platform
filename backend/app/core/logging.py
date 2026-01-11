@@ -14,6 +14,9 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
+        if record.exc_info:
+            log_record["exception"] = self.formatException(record.exc_info)
+
         if hasattr(record, "job_id"):
             log_record["job_id"] = record.job_id
 
@@ -25,6 +28,10 @@ class JsonFormatter(logging.Formatter):
 
 def setup_logging() -> logging.Logger:
     logger = logging.getLogger("resilient-platform")
+    
+    if logger.handlers:
+        return logger  
+
     logger.setLevel(logging.INFO)
 
     handler = logging.StreamHandler(sys.stdout)

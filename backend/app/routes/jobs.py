@@ -35,6 +35,8 @@ def create_job(
             user_id="dummy-user",  # placeholder until auth is added
             input_file_path=request.input_file_path,
             max_retries=request.max_retries,
+            status=JobStatus.CREATED,
+            retry_count=0,
         )
 
         # Persist job
@@ -44,6 +46,10 @@ def create_job(
             "Job created",
             extra={"job_id": str(job.job_id)},
         )
+
+        # Transition to QUEUED - initial state after creation
+        # need separate “enqueue” step to allow for future queuing logic
+        job = repo._transition(job.job_id, JobStatus.QUEUED)
 
         return JobCreateResponse(
             job_id=job.job_id,
@@ -62,7 +68,7 @@ def create_job(
         )
 
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Failed to create job",
             extra={"error": str(e)},
         )

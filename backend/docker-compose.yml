@@ -1,4 +1,5 @@
 services:
+
   postgres-service:
     image: postgres:16-alpine
     container_name: resilient-postgres
@@ -22,24 +23,50 @@ services:
     # build: .
     image: jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0
     container_name: resilient-backend
-    entrypoint: ["/app/entrypoint.sh"] # Use entrypoint fpr local development, for k8s use init containers
+    # entrypoint: ["/app/entrypoint.sh"] # Use entrypoint fpr local development, for k8s use init containers
     command: uv run uvicorn main:app --host 0.0.0.0 --port 5001
     ports:
       - "5001:5001"
     depends_on:
       postgres-service:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: notifications
       POSTGRES_HOST: postgres-service
       POSTGRES_PORT: 5432
-    volumes:
-      - .:/app
+    # volumes:
+    #   - .:/app
     networks:
       - app-network
     restart: always
+
+
+  migrate:
+    image: jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0
+    command: alembic upgrade head
+    depends_on:
+      postgres-service:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  worker:
+    image: jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0
+    command: python -m app.workers.worker
+    depends_on:
+      postgres-service:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    # volumes:
+    #   - .:/app
+    networks:
+      - app-network
+
 
 networks:
   app-network:
