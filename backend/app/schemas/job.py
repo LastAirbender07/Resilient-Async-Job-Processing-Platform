@@ -46,6 +46,9 @@ class JobStatusResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    next_run_at: Optional[datetime]
+    finished_at: Optional[datetime]
+
 class JobListResponse(BaseModel):
     """
     Paginated list of jobs for a user.

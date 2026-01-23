@@ -24,6 +24,11 @@ def run_worker():
 
             process_job(job, repo)
 
+        except Exception:
+            # This should NEVER happen often; If it does, your worker logic is broken.
+            logger.exception("Unhandled worker loop exception")
+            time.sleep(2)
+
         finally:
             db.close()
 
@@ -40,8 +45,8 @@ def process_job(job, repo: JobRepository):
         logger.info(f"Completed job {job.job_id}, output at {output_path}")
 
     except Exception as e:
-        repo.mark_failed(job.job_id, str(e))
         logger.exception(f"Failed to process job {job.job_id}: {e}")
+        repo.handle_failure(job_id=job.job_id, error_message=str(e))
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from uuid import UUID, uuid4
 from typing import Optional
 from app.schemas.job_status import JobStatus
@@ -31,6 +31,20 @@ class Job:
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime = field(default_factory=utc_now)
 
+    next_run_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+
+    def should_retry(self) -> bool:
+        return self.retry_count < self.max_retries
+
+
+    # Exponential backoff with a max delay of 5 minutes.
+    def compute_next_run_at(self) -> datetime:
+        delay_seconds = min(2 ** self.retry_count, 300)
+        return utc_now() + timedelta(seconds=delay_seconds)
+
+
     def can_transition_to(self, new_status: JobStatus) -> bool:
         allowed = {
             JobStatus.CREATED: {JobStatus.QUEUED},
@@ -43,12 +57,18 @@ class Job:
                 JobStatus.RETRYING,
                 JobStatus.DEAD,
             },
-            JobStatus.RETRYING: {JobStatus.PROCESSING},
+            JobStatus.RETRYING: {JobStatus.QUEUED},
         }
 
         return new_status in allowed.get(self.status, set())
 
-    def transition(self, new_status: JobStatus, error_message: Optional[str] = None):
+
+    def transition(
+        self,
+        new_status: JobStatus,
+        error_message: Optional[str] = None,
+        next_run_at: Optional[datetime] = None,
+    ):
         if self.status in {JobStatus.COMPLETED, JobStatus.DEAD}:
             raise ValueError("Cannot transition from terminal state")
 
@@ -62,5 +82,8 @@ class Job:
             self.retry_count += 1
             self.error_message = error_message
 
-        # if self.retry_count >= self.max_retries:
-        #     self.status = JobStatus.DEAD
+        if new_status == JobStatus.RETRYING:
+            self.next_run_at = next_run_at
+
+        if new_status in {JobStatus.COMPLETED, JobStatus.DEAD}:
+            self.finished_at = utc_now()

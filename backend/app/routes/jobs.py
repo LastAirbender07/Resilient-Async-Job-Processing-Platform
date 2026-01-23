@@ -103,7 +103,10 @@ def get_job(
         error_message=job.error_message,
         created_at=job.created_at,
         updated_at=job.updated_at,
+        next_run_at=job.next_run_at,
+        finished_at=job.finished_at,
     )
+
 
 @router.get("",response_model=JobListResponse,)
 def list_jobs(
@@ -128,10 +131,72 @@ def list_jobs(
                 error_message=job.error_message,
                 created_at=job.created_at,
                 updated_at=job.updated_at,
+                next_run_at=job.next_run_at,
+                finished_at=job.finished_at,
             )
+
             for job in jobs
         ],
         total=total,
         limit=limit,
         offset=offset,
     )
+
+
+@router.post(
+    "/{job_id}/retry",
+    response_model=JobStatusResponse,
+)
+def retry_job(
+    job_id: UUID,
+    db: Session = Depends(get_db),
+):
+    repo = JobRepository(db)
+
+    job = repo.get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    if job.status not in {JobStatus.FAILED, JobStatus.DEAD}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Job in state {job.status} cannot be retried",
+        )
+
+    if job.retry_count >= job.max_retries:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Job exceeded maximum retries",
+        )
+
+    # retry
+    next_run_at = job.compute_next_run_at()
+    job = repo._transition(
+        job.job_id,
+        JobStatus.RETRYING,
+        next_run_at=next_run_at,
+    )
+
+    # Immediately enqueue
+    job = repo._transition(job.job_id, JobStatus.QUEUED)
+
+    logger.info(
+        "Job manually retried",
+        extra={"job_id": str(job.job_id)},
+    )
+
+    return JobStatusResponse(
+        job_id=job.job_id,
+        status=job.status,
+        retry_count=job.retry_count,
+        max_retries=job.max_retries,
+        error_message=job.error_message,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        next_run_at=job.next_run_at,
+        finished_at=job.finished_at,
+    )
+
