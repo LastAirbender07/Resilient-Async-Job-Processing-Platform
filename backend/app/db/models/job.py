@@ -48,6 +48,11 @@ class JobORM(Base):
             "user_id",
             "created_at",
         ),
+        Index(
+            "ix_jobs_status_next_run_at",
+            "status",
+            "next_run_at",
+        )
     )
 
     job_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -78,4 +83,16 @@ class JobORM(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    next_run_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=True,
+    )
+
+    finished_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=True,
     )

@@ -38,8 +38,8 @@ services:
       POSTGRES_DB: notifications
       POSTGRES_HOST: postgres-service
       POSTGRES_PORT: 5432
-    # volumes:
-    #   - .:/app
+    volumes:
+      - .:/app
     networks:
       - app-network
     restart: always
@@ -62,8 +62,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    # volumes:
-    #   - .:/app
+    volumes:
+      - .:/app
     networks:
       - app-network
 
