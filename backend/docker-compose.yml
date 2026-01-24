@@ -19,6 +19,16 @@ services:
     networks:
       - app-network
 
+
+  redis-service:
+    image: redis:7-alpine
+    container_name: resilient-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
+
   backend:
     # build: .
     image: jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0
@@ -30,6 +40,8 @@ services:
     depends_on:
       postgres-service:
         condition: service_healthy
+      redis-service:
+        condition: service_started
       migrate:
         condition: service_completed_successfully
     environment:
@@ -38,6 +50,9 @@ services:
       POSTGRES_DB: notifications
       POSTGRES_HOST: postgres-service
       POSTGRES_PORT: 5432
+      REDIS_HOST: redis-service
+      REDIS_PORT: 6379
+
     volumes:
       - .:/app
     networks:
@@ -54,12 +69,15 @@ services:
     networks:
       - app-network
 
+
   worker:
     image: jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0
     command: python -m app.workers.worker
     depends_on:
       postgres-service:
         condition: service_healthy
+      redis-service:
+        condition: service_started
       migrate:
         condition: service_completed_successfully
     volumes:

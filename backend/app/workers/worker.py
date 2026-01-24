@@ -1,7 +1,7 @@
 import time
 from app.db.session import SessionLocal
+from app.queues.job_queue import JobQueue
 from app.repositories.job_repository import JobRepository
-
 from app.core.logging import setup_logging
 
 logger = setup_logging()
@@ -9,7 +9,12 @@ logger = setup_logging()
 POLL_INTERVAL_SECONDS = 1
 
 def run_worker():
+    queue = JobQueue()
+
     while True:
+        # Block until signaled
+        queue.dequeue(timeout=5)
+        
         db = SessionLocal()
         try:
             repo = JobRepository(db)
