@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from app.models.job import Job
 from app.db.models.job import JobORM
 from app.schemas.job_status import JobStatus
-from app.queues.job_queue import JobQueue
 from app.repositories.mappers import orm_to_domain, domain_to_orm
 from app.core.logging import setup_logging
 
@@ -19,7 +18,6 @@ def utc_now():
 class JobRepository:
     def __init__(self, db: Session):
         self.db = db
-        self.queue = JobQueue()
 
 
     def create_job(self, job: Job) -> Job:
@@ -88,10 +86,6 @@ class JobRepository:
             raise
 
         self.db.refresh(orm)
-
-        if new_status == JobStatus.QUEUED:
-            self.queue.enqueue(orm.job_id)
-            logger.info(f"Enqueued job {orm.job_id} to Redis")
 
         return orm_to_domain(orm)
 
@@ -195,11 +189,7 @@ class JobRepository:
             raise
 
         self.db.refresh(orm)
-        
-        if orm.status == JobStatus.RETRYING:
-            # enqueue will happen when scheduler flips it to QUEUED
-            pass
-
+    
         return orm_to_domain(orm)
 
 
