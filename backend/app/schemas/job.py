@@ -17,11 +17,11 @@ class JobCreateRequest(BaseModel):
         example="uploads/user123/data.csv",
     )
 
-    # input_metadata: Dict[str, Any] = Field(
-    #     default_factory=dict,
-    #     description="Processor-specific configuration (delimiter, columns, flags, etc.)",
-    #     example={"delimiter": ",", "has_header": True},
-    # )
+    input_metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Processor-specific configuration (key, columns, flags, etc.)",
+        example={"key": ",", "has_header": True},
+    )
 
     max_retries: int = Field(
         default=3,

@@ -39,6 +39,7 @@ def create_job(
             input_metadata=build_input_metadata(
                 request.job_type,
                 request.input_file_path,
+                request.input_metadata
             ),
             max_retries=request.max_retries,
             status=JobStatus.CREATED,
