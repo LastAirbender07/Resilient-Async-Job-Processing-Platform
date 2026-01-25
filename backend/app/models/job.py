@@ -68,7 +68,7 @@ class Job:
                 JobStatus.RETRYING,
                 JobStatus.DEAD,
             },
-            JobStatus.RETRYING: {JobStatus.QUEUED},
+            JobStatus.RETRYING: {JobStatus.QUEUED, JobStatus.PROCESSING},
         }
 
         return new_status in allowed.get(self.status, set())

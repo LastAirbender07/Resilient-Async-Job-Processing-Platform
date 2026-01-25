@@ -4,7 +4,8 @@ from app.processors.base import JobProcessor
 
 class CsvColumnStatsProcessor(JobProcessor):
     def process(self, job_input: dict) -> dict:
-        file_path = job_input["file_path"]
+        file_path = job_input["input_file_path"]
+        metadata = job_input["input_metadata"]
 
         stats = defaultdict(list)
 
@@ -25,6 +26,9 @@ class CsvColumnStatsProcessor(JobProcessor):
                 "min": min(values),
                 "max": max(values),
                 "avg": sum(values) / len(values),
+                "message": "Job executed",
+                "file_path": file_path,
+                "metadata": metadata,
             }
 
         return result

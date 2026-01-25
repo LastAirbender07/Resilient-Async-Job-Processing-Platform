@@ -204,7 +204,7 @@ class JobRepository:
         orm = (
             self.db.query(JobORM)
             .filter(
-                JobORM.status.in_([JobStatus.QUEUED, JobStatus.FAILED]),
+                JobORM.status.in_([JobStatus.QUEUED, JobStatus.RETRYING]),
                 or_(
                     JobORM.next_run_at.is_(None),
                     JobORM.next_run_at <= now,

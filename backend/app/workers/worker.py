@@ -42,8 +42,16 @@ def run_worker():
 def process_job(job, repo: JobRepository):
     try:
         processor = get_processor(job.job_type)
-        result = processor.process(job.input)
 
+        payload = {
+            "job_id": str(job.job_id),
+            "job_type": job.job_type,
+            "input_file_path": job.input_file_path,
+            "input_metadata": job.input_metadata,
+        }
+
+        result = processor.process(payload)
+        
         output_path = store_result(job.job_id, result)
         repo.mark_completed(job.job_id, output_path)
 
