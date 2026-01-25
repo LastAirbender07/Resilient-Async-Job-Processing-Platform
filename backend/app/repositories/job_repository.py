@@ -19,10 +19,15 @@ class JobRepository:
     def __init__(self, db: Session):
         self.db = db
 
-
     def create_job(self, job: Job) -> Job:
         if job.status != JobStatus.CREATED:
             raise ValueError("Jobs must start in CREATED state")
+        
+        if not job.job_type:
+            raise ValueError("job_type is required")
+
+        if job.input_metadata is None:
+            raise ValueError("input_metadata is required")
         
         if job.max_retries is None or job.max_retries < 0:
             raise ValueError("max_retries must be >= 0")

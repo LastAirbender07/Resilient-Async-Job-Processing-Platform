@@ -2,6 +2,8 @@ import time
 from app.db.session import SessionLocal
 from app.queues.job_queue import JobQueue
 from app.repositories.job_repository import JobRepository
+from app.processors.registry import get_processor
+from app.workers.output_store import store_result
 from app.core.logging import setup_logging
 
 logger = setup_logging()
@@ -37,14 +39,12 @@ def run_worker():
         finally:
             db.close()
 
-# ntentionally dumb for now.
 def process_job(job, repo: JobRepository):
     try:
-        # Simulate work
-        time.sleep(2)
+        processor = get_processor(job.job_type)
+        result = processor.process(job.input)
 
-        # Fake output
-        output_path = f"/tmp/output/{job.job_id}.txt"
+        output_path = store_result(job.job_id, result)
         repo.mark_completed(job.job_id, output_path)
 
         logger.info(f"Completed job {job.job_id}, output at {output_path}")

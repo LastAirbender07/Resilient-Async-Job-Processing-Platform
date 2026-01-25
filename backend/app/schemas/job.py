@@ -1,19 +1,27 @@
 from pydantic import BaseModel, Field
 from uuid import UUID
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from app.schemas.job_status import JobStatus
+from app.schemas.job_type import JobType
 
 class JobCreateRequest(BaseModel):
     """
     Request payload to create a new async processing job.
     """
+    job_type: JobType
 
     input_file_path: str = Field(
         ...,
         description="Path or object key of the uploaded file to be processed",
         example="uploads/user123/data.csv",
     )
+
+    # input_metadata: Dict[str, Any] = Field(
+    #     default_factory=dict,
+    #     description="Processor-specific configuration (delimiter, columns, flags, etc.)",
+    #     example={"delimiter": ",", "has_header": True},
+    # )
 
     max_retries: int = Field(
         default=3,
@@ -36,12 +44,16 @@ class JobStatusResponse(BaseModel):
     """
 
     job_id: UUID
+    job_type: JobType
     status: JobStatus
 
     retry_count: int
     max_retries: int
 
     error_message: Optional[str]
+
+    input_file_path: str
+    output_file_path: Optional[str]
 
     created_at: datetime
     updated_at: datetime

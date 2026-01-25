@@ -8,10 +8,11 @@ from sqlalchemy import (
     Index,
     CheckConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from app.db.base import Base
 from app.schemas.job_status import JobStatus
+from app.schemas.job_type import JobType
 import uuid
 
 
@@ -34,25 +35,11 @@ class JobORM(Base):
         ),
 
         # --- INDEXES ---
-        Index(
-            "ix_jobs_status",
-            "status",
-        ),
-        Index(
-            "ix_jobs_status_created_at",
-            "status",
-            "created_at",
-        ),
-        Index(
-            "ix_jobs_user_id_created_at",
-            "user_id",
-            "created_at",
-        ),
-        Index(
-            "ix_jobs_status_next_run_at",
-            "status",
-            "next_run_at",
-        )
+        Index("ix_jobs_status", "status"),
+        Index("ix_jobs_status_created_at", "status", "created_at"),
+        Index("ix_jobs_user_id_created_at", "user_id","created_at"),
+        Index("ix_jobs_status_next_run_at","status","next_run_at"),
+        Index("ix_jobs_job_type", "job_type"),
     )
 
     job_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -61,6 +48,16 @@ class JobORM(Base):
 
     status = Column(
         Enum(JobStatus, name="job_status"),
+        nullable=False,
+    )
+
+    job_type = Column(
+        Enum(JobType, name="job_type"),
+        nullable=False,
+    )
+
+    input_metadata = Column(
+        JSONB,
         nullable=False,
     )
 

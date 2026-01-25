@@ -1,8 +1,9 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from uuid import UUID, uuid4
-from typing import Optional
+from typing import Optional, Dict, Any
 from app.schemas.job_status import JobStatus
+from app.schemas.job_type import JobType
 
 def utc_now():
     return datetime.now(timezone.utc)
@@ -18,8 +19,11 @@ class Job:
 
     job_id: UUID = field(default_factory=uuid4)
     user_id: str = ""
+
+    job_type: JobType = field(default=None)
     status: JobStatus = JobStatus.CREATED
 
+    input_metadata: Dict[str, Any] = field(default_factory=dict)
     input_file_path: str = ""
     output_file_path: Optional[str] = None
 
@@ -33,6 +37,13 @@ class Job:
 
     next_run_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+
+    def __post_init__(self):
+        if self.job_type is None:
+            raise ValueError("job_type is required")
+
+        if not isinstance(self.input_metadata, dict):
+            raise ValueError("input_metadata must be a dictionary")
 
 
     def should_retry(self) -> bool:

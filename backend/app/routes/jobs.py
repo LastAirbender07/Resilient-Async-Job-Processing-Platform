@@ -12,6 +12,7 @@ from app.schemas.job_status import JobStatus
 from app.models.job import Job
 from app.repositories.job_repository import JobRepository
 from app.db.session import get_db
+from app.core.job_factory import build_input_metadata
 from app.core.logging import setup_logging
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -33,7 +34,12 @@ def create_job(
         # Create domain job
         job = Job(
             user_id="dummy-user",  # placeholder until auth is added
+            job_type=request.job_type,
             input_file_path=request.input_file_path,
+            input_metadata=build_input_metadata(
+                request.job_type,
+                request.input_file_path,
+            ),
             max_retries=request.max_retries,
             status=JobStatus.CREATED,
             retry_count=0,
@@ -41,15 +47,7 @@ def create_job(
 
         # Persist job
         job = repo.create_job(job)
-
-        logger.info(
-            "Job created",
-            extra={"job_id": str(job.job_id)},
-        )
-
-        # Transition to QUEUED - initial state after creation
-        # need separate “enqueue” step to allow for future queuing logic
-        job = repo._transition(job.job_id, JobStatus.QUEUED)
+        job = repo.mark_queued(job.job_id)
 
         return JobCreateResponse(
             job_id=job.job_id,
@@ -97,14 +95,18 @@ def get_job(
 
     return JobStatusResponse(
         job_id=job.job_id,
+        job_type=job.job_type,
         status=job.status,
         retry_count=job.retry_count,
         max_retries=job.max_retries,
         error_message=job.error_message,
+        input_file_path=job.input_file_path,
+        output_file_path=job.output_file_path,
         created_at=job.created_at,
         updated_at=job.updated_at,
         next_run_at=job.next_run_at,
         finished_at=job.finished_at,
+
     )
 
 
@@ -125,10 +127,13 @@ def list_jobs(
         items=[
             JobStatusResponse(
                 job_id=job.job_id,
+                job_type=job.job_type,
                 status=job.status,
                 retry_count=job.retry_count,
                 max_retries=job.max_retries,
                 error_message=job.error_message,
+                input_file_path=job.input_file_path,
+                output_file_path=job.output_file_path,
                 created_at=job.created_at,
                 updated_at=job.updated_at,
                 next_run_at=job.next_run_at,
@@ -190,10 +195,13 @@ def retry_job(
 
     return JobStatusResponse(
         job_id=job.job_id,
+        job_type=job.job_type,
         status=job.status,
         retry_count=job.retry_count,
         max_retries=job.max_retries,
         error_message=job.error_message,
+        input_file_path=job.input_file_path,
+        output_file_path=job.output_file_path,
         created_at=job.created_at,
         updated_at=job.updated_at,
         next_run_at=job.next_run_at,
