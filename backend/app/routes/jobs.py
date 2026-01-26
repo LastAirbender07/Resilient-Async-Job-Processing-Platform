@@ -13,6 +13,8 @@ from app.models.job import Job
 from app.repositories.job_repository import JobRepository
 from app.db.session import get_db
 from app.core.job_factory import build_input_metadata
+from app.core.storage import StorageClient
+from app.core.settings import settings
 from app.core.logging import setup_logging
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -29,8 +31,31 @@ def create_job(
     db: Session = Depends(get_db),
 ):
     try:
+        storage = StorageClient()
         repo = JobRepository(db)
 
+        try:
+            exists = storage.object_exists(
+                bucket=settings.S3_INPUT_BUCKET,
+                object_key=request.input_file_path,
+            )
+        except Exception as e:
+            logger.exception(
+                "Failed to create job as Storage backend was unavailable",
+                extra={"error": str(e)},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storage backend unavailable",
+            )
+
+        if not exists:
+            logger.exception(f"Failed to create job as Input file '{request.input_file_path}' does not exist")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Input file '{request.input_file_path}' does not exist",
+            )
+        
         # Create domain job
         job = Job(
             user_id="dummy-user",  # placeholder until auth is added

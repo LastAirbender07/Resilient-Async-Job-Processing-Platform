@@ -8,13 +8,17 @@ from app.schemas.job_type import JobType
 class JobCreateRequest(BaseModel):
     """
     Request payload to create a new async processing job.
+    The input file MUST already exist in object storage before this API is called.
     """
     job_type: JobType
 
     input_file_path: str = Field(
         ...,
-        description="Path or object key of the uploaded file to be processed",
-        example="uploads/user123/data.csv",
+        description=(
+            "Object key of the input file in the configured input bucket. "
+            "The file must already be uploaded before job creation."
+        ),
+        example="test.json",
     )
 
     input_metadata: Dict[str, Any] = Field(

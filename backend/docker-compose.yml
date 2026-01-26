@@ -29,6 +29,53 @@ services:
       - app-network
 
 
+  migrate:
+    image: jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0
+    command: alembic upgrade head
+    depends_on:
+      postgres-service:
+        condition: service_healthy
+    networks:
+      - app-network
+
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console UI
+    volumes:
+      - minio_data:/data
+    networks:
+      - app-network
+
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do
+        echo 'Waiting for MinIO...'
+        sleep 2
+      done &&
+      mc mb --ignore-existing local/resilient-async-job-processing-inputs &&
+      mc mb --ignore-existing local/resilient-async-job-processing-outputs &&
+      echo 'Buckets created for resilient-async-job-processing project' &&
+      echo '{ \"mode\" : \"test\", \"hello\" : \"world\" , \"n\" : [67, 4, 34]}' > /tmp/test.json &&
+      mc cp /tmp/test.json local/resilient-async-job-processing-inputs/test.json &&
+      echo 'Test file uploaded successfully'
+      "
+    networks:
+      - app-network
+
+
   backend:
     # build: .
     image: jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0
@@ -50,24 +97,23 @@ services:
       POSTGRES_DB: notifications
       POSTGRES_HOST: postgres-service
       POSTGRES_PORT: 5432
+
       REDIS_HOST: redis-service
       REDIS_PORT: 6379
 
+      S3_HOST: minio
+      S3_PORT: 9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_INPUT_BUCKET: resilient-async-job-processing-inputs
+      S3_OUTPUT_BUCKET: resilient-async-job-processing-outputs
+      S3_USE_SSL: "false"
     volumes:
       - .:/app
     networks:
       - app-network
     restart: always
-
-
-  migrate:
-    image: jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0
-    command: alembic upgrade head
-    depends_on:
-      postgres-service:
-        condition: service_healthy
-    networks:
-      - app-network
 
 
   worker:
@@ -80,6 +126,24 @@ services:
         condition: service_started
       migrate:
         condition: service_completed_successfully
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: notifications
+      POSTGRES_HOST: postgres-service
+      POSTGRES_PORT: 5432
+
+      REDIS_HOST: redis-service
+      REDIS_PORT: 6379
+
+      S3_HOST: minio
+      S3_PORT: 9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_INPUT_BUCKET: resilient-async-job-processing-inputs
+      S3_OUTPUT_BUCKET: resilient-async-job-processing-outputs
+      S3_USE_SSL: "false"
     volumes:
       - .:/app
     networks:
@@ -92,3 +156,4 @@ networks:
 
 volumes:
   postgres_data:
+  minio_data:
