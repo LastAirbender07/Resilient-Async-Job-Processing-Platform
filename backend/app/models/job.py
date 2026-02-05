@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from uuid import UUID, uuid4
 from typing import Optional, Dict, Any
-from app.schemas.job_status import JobStatus
-from app.schemas.job_type import JobType
+from app.core.enums.job_status import JobStatus
+from app.core.enums.job_type import JobType
 
 def utc_now():
     return datetime.now(timezone.utc)
@@ -18,7 +18,6 @@ class Job:
     """
 
     job_id: UUID = field(default_factory=uuid4)
-    user_id: str = ""
 
     job_type: JobType = field(default=None)
     status: JobStatus = JobStatus.CREATED
@@ -26,6 +25,9 @@ class Job:
     input_metadata: Dict[str, Any] = field(default_factory=dict)
     input_file_path: str = ""
     output_file_path: Optional[str] = None
+
+    context: Dict[str, Any] = field(default_factory=dict)
+    notifications: Dict[str, Any] = field(default_factory=dict)
 
     retry_count: int = 0
     max_retries: int = 3
@@ -98,3 +100,16 @@ class Job:
 
         if new_status in {JobStatus.COMPLETED, JobStatus.DEAD}:
             self.finished_at = utc_now()
+
+    def should_notify(self, event) -> bool:
+        """
+        Determines whether a notification should be sent for a given event.
+        """
+        if not self.notifications:
+            return False
+
+        email_cfg = self.notifications.get("email")
+        if not email_cfg or not email_cfg.get("enabled", False):
+            return False
+
+        return event in email_cfg.get("on", [])

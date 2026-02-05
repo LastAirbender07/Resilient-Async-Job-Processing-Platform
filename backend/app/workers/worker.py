@@ -1,16 +1,18 @@
 import time
-import os
 import json
 from pathlib import Path
 from app.db.session import SessionLocal
 from app.queues.job_queue import JobQueue
 from app.repositories.job_repository import JobRepository
-from app.processors.registry import get_processor
+from app.core.notifications.dispatcher import NotificationDispatcher
+from app.core.notifications.events import JobEvent
 from app.core.storage import StorageClient
 from app.core.settings import settings
+from app.processors.registry import get_processor
 from app.core.logging import setup_logging
 
 logger = setup_logging()
+dispatcher = NotificationDispatcher()
 
 POLL_INTERVAL_SECONDS = 1
 TMP_DIR = Path("/tmp/jobs")
@@ -66,13 +68,15 @@ def persist_output(job, result: dict, storage: StorageClient, workspace: Path) -
 
 
 def finalize_success(job, repo: JobRepository, output_key: str):
-    repo.mark_completed(job.job_id, output_file_path=output_key)
+    job = repo.mark_completed(job.job_id, output_file_path=output_key)
+    dispatcher.dispatch(job, JobEvent.SUCCESS)
     logger.info("Job completed", extra={"job_id": str(job.job_id)})
 
 
 def finalize_failure(job, repo: JobRepository, error: Exception):
     logger.exception("Job failed", extra={"job_id": str(job.job_id)})
-    repo.handle_failure(job.job_id, str(error))
+    job = repo.handle_failure(job.job_id, str(error))
+    dispatcher.dispatch(job, JobEvent.FAILURE)
 
 
 def handle_job(job, repo: JobRepository, storage: StorageClient):
@@ -107,7 +111,7 @@ def run_worker():
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
 
-            logger.info(f"Processing job {job.job_id} for user {job.user_id}")
+            logger.info(f"Processing job {job.job_id}")
 
             handle_job(job, repo, storage)
 

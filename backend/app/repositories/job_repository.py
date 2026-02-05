@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from app.models.job import Job
 from app.db.models.job import JobORM
-from app.schemas.job_status import JobStatus
+from app.core.enums.job_status import JobStatus
 from app.repositories.mappers import orm_to_domain, domain_to_orm
 from app.core.logging import setup_logging
 
@@ -18,6 +18,7 @@ def utc_now():
 class JobRepository:
     def __init__(self, db: Session):
         self.db = db
+
 
     def create_job(self, job: Job) -> Job:
         if job.status != JobStatus.CREATED:
@@ -44,10 +45,10 @@ class JobRepository:
         
         self.db.refresh(orm)
 
-        logger.info(f"Created job {orm.job_id} for user {orm.user_id}")
+        logger.info(f"Created job {orm.job_id}")
         return orm_to_domain(orm)
     
-    
+
     def _transition(
         self,
         job_id,
@@ -105,26 +106,20 @@ class JobRepository:
         return orm_to_domain(orm) if orm else None
     
 
-    def list_jobs(self, user_id: str, limit: int = 20, offset: int = 0):
+    def list_jobs(self, limit: int = 20, offset: int = 0):
         orms = (
             self.db.query(JobORM)
-            .filter(JobORM.user_id == user_id)
             .order_by(JobORM.created_at.desc())
             .offset(offset)
             .limit(limit)
             .all()
         )
-        logger.debug(f"Listed jobs for user {user_id}, count: {len(orms)}")
+        logger.debug(f"Listed jobs, count: {len(orms)}")
         return [orm_to_domain(orm) for orm in orms]
     
     
-    def count_jobs(self, user_id: str) -> int:
-        logger.debug(f"Counting jobs for user {user_id}")
-        return (
-            self.db.query(JobORM)
-            .filter(JobORM.user_id == user_id)
-            .count()
-        )
+    def count_jobs(self) -> int:
+        return self.db.query(JobORM).count()
     
 
     def mark_queued(self, job_id) -> Job:

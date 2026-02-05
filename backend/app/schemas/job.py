@@ -1,9 +1,36 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from uuid import UUID
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from app.schemas.job_status import JobStatus
-from app.schemas.job_type import JobType
+from app.core.enums.job_event import JobEvent
+from app.core.enums.job_status import JobStatus
+from app.core.enums.job_type import JobType
+
+class JobContext(BaseModel):
+    user_id: Optional[str] = Field(
+        default=None,
+        description="Opaque user identifier from upstream system"
+    )
+    email: Optional[EmailStr] = Field(
+        default=None,
+        description="Email address for job notifications"
+    )
+
+class EmailNotificationConfig(BaseModel):
+    enabled: bool = Field(
+        default=True,
+        description="Whether email notifications are enabled"
+    )
+    on: List[JobEvent] = Field(
+        default_factory=lambda: [JobEvent.FAILURE],
+        description="Job events that should trigger an email"
+    )
+
+class JobNotifications(BaseModel):
+    email: Optional[EmailNotificationConfig] = Field(
+        default=None,
+        description="Email notification configuration"
+    )
 
 class JobCreateRequest(BaseModel):
     """
@@ -25,6 +52,16 @@ class JobCreateRequest(BaseModel):
         default_factory=dict,
         description="Processor-specific configuration (key, columns, flags, etc.)",
         example={"key": ",", "has_header": True},
+    )
+
+    context: Optional[JobContext] = Field(
+        default=None,
+        description="Context about who or what triggered the job"
+    )
+
+    notifications: Optional[JobNotifications] = Field(
+        default=None,
+        description="Notification preferences for job lifecycle events"
     )
 
     max_retries: int = Field(

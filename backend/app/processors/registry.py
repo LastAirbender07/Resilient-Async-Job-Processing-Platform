@@ -1,4 +1,4 @@
-from app.schemas.job_type import JobType
+from app.core.enums.job_type import JobType
 
 from app.processors.test_job import TestJobProcessor
 from app.processors.csv.row_count import CsvRowCountProcessor

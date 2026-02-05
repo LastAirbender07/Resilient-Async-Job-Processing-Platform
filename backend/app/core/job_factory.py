@@ -1,4 +1,7 @@
-from app.schemas.job_type import JobType
+from app.models.job import Job
+from app.core.enums.job_type import JobType
+from app.core.enums.job_status import JobStatus
+from app.schemas.job import JobCreateRequest
 
 def build_input_metadata(job_type: JobType, path: str, custom_metadata: dict) -> dict:
     """

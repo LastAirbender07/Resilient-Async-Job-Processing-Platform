@@ -5,10 +5,11 @@ from uuid import UUID
 from app.schemas.job import (
     JobCreateRequest,
     JobCreateResponse,
-    JobStatusResponse,
+    JobStatusResponse,  
     JobListResponse,
 )
-from app.schemas.job_status import JobStatus
+from app.core.enums.job_status import JobStatus
+from app.core.enums.job_type import JobType
 from app.models.job import Job
 from app.repositories.job_repository import JobRepository
 from app.db.session import get_db
@@ -58,17 +59,18 @@ def create_job(
         
         # Create domain job
         job = Job(
-            user_id="dummy-user",  # placeholder until auth is added
             job_type=request.job_type,
             input_file_path=request.input_file_path,
             input_metadata=build_input_metadata(
                 request.job_type,
                 request.input_file_path,
-                request.input_metadata
+                request.input_metadata,
             ),
             max_retries=request.max_retries,
             status=JobStatus.CREATED,
             retry_count=0,
+            context=request.context.dict() if request.context else {},
+            notifications=request.notifications.dict() if request.notifications else {},
         )
 
         # Persist job
@@ -144,10 +146,8 @@ def list_jobs(
 ):
     repo = JobRepository(db)
 
-    user_id = "dummy-user"  # placeholder until auth is added
-
-    jobs = repo.list_jobs(user_id=user_id, limit=limit, offset=offset)
-    total = repo.count_jobs(user_id=user_id)
+    jobs = repo.list_jobs(limit=limit, offset=offset)
+    total = repo.count_jobs()
 
     return JobListResponse(
         items=[
