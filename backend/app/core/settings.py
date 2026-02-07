@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     )
 
     S3_USE_SSL: bool = os.getenv("S3_USE_SSL", "false").lower() == "true"
+    MINIO_ROOT_USER: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
+    MINIO_ROOT_PASSWORD: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+
+    # --- Mailtrap ---
+    MAILTRAP_API_KEY: str = os.getenv("MAILTRAP_API_KEY", "")
+    MAILTRAP_INBOX_ID: str = os.getenv("MAILTRAP_INBOX_ID", "")
+    MAILTRAP_USE_SANDBOX: bool = os.getenv("MAILTRAP_USE_SANDBOX", "true").lower() == "true"
+    MAILTRAP_SENDER_EMAIL: str = os.getenv("MAILTRAP_SENDER_EMAIL", "")
+    MAILTRAP_SENDER_NAME: str = os.getenv("MAILTRAP_SENDER_NAME", "")
 
     # --- Computed properties ---
     @property

@@ -203,14 +203,167 @@ Specifically:
 
 ---
 
-# Phase 3 — Mailgun (Later, NOT NOW)
 
-We explicitly  **do not implement Mailgun yet** .
+# 📧 Email Notifications via Mailtrap (Sandbox Mode)
 
-Why?
+This document explains how **email notifications** were integrated into the **Resilient Async Job Processing Platform** using  **Mailtrap** , and the current operational constraints while running in  **sandbox mode** .
 
-* Contract must stabilize first
-* Dispatcher API must exist
-* Worker semantics must be correct
+---
 
-Mailgun will come  **after Helm** , not before.
+## 1. Why Mailtrap?
+
+Mailtrap was chosen because it provides:
+
+* Safe email testing without sending real emails
+* Clear separation between **Sandbox (testing)** and **Production (real sending)**
+* A first-class Python SDK
+* API-based sending (no SMTP dependency)
+* Excellent observability during development and CI
+
+At this stage of the project,  **only Mailtrap Sandbox is used** .
+
+---
+
+## 2. High-Level Architecture
+
+Email notifications are implemented as a **non-blocking, event-driven side effect** of job execution.
+
+<pre class="overflow-visible! px-0!" data-start="1064" data-end="1246"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(--spacing(9)+var(--header-height))] @w-xl/main:top-9"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre!"><span><span>Worker
+  └── Job Lifecycle </span><span>Event</span><span></span><span>(SUCCESS / FAILURE)</span><span>
+        └── NotificationDispatcher
+              └── MailtrapEmailProvider
+                    └── Mailtrap </span><span>API</span><span></span><span>(Sandbox)</span><span>
+</span></span></code></div></div></pre>
+
+### Key Design Principles
+
+* Notifications **never affect job execution**
+* Failures in email sending are **logged, not propagated**
+* Providers are **pluggable and isolated**
+* Dispatch happens **after job state transitions**
+
+---
+
+## 3. Job → Notification Flow
+
+1. A job is executed by the worker
+2. The job completes with either:
+   * `SUCCESS`
+   * `FAILURE`
+3. The worker emits a lifecycle event
+4. `NotificationDispatcher` receives the event
+5. Enabled notification providers are invoked
+6. The Mailtrap provider evaluates:
+   * Whether email notifications are enabled
+   * Whether the event matches configured triggers
+   * Whether a recipient email exists
+7. An email is prepared and sent via Mailtrap API
+
+---
+
+## 4. Mailtrap Integration Strategy
+
+### Provider-Based Design
+
+Mailtrap is implemented as a  **notification provider** , conforming to a common interface:
+
+<pre class="overflow-visible! px-0!" data-start="2123" data-end="2245"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(--spacing(9)+var(--header-height))] @w-xl/main:top-9"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre! language-text"><span><span>NotificationDispatcher
+  ├── MailtrapEmailProvider
+  ├── (future) SlackProvider
+  └── (future) WebhookProvider
+</span></span></code></div></div></pre>
+
+This allows:
+
+* Easy addition of new channels
+* Independent failure handling
+* Clean separation of concerns
+
+---
+
+## 5. Sandbox-Only Mode (Important)
+
+⚠️ **Current Limitation**
+
+The project uses  **Mailtrap Sandbox mode only** .
+
+This means:
+
+* Emails are **not delivered to real inboxes**
+* Emails can be sent **only to the Mailtrap account owner**
+* Emails appear inside the Mailtrap **Email Testing Inbox**
+* No DNS setup or domain verification is required
+
+This is **intentional** and ideal for:
+
+* Local development
+* Docker Compose environments
+* CI pipelines
+* Pre-Kubernetes validation
+
+---
+
+## 6. Environment Configuration
+
+Mailtrap behavior is controlled entirely via environment variables.
+
+<pre class="overflow-visible! px-0!" data-start="2945" data-end="3123"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(--spacing(9)+var(--header-height))] @w-xl/main:top-9"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre! language-env"><span>MAILTRAP_API_KEY=your_mailtrap_api_token
+MAILTRAP_USE_SANDBOX=true
+MAILTRAP_INBOX_ID=123456
+MAIL_FROM_EMAIL=hello@demomailtrap.co
+MAIL_FROM_NAME=Resilient Job Platform
+</span></code></div></div></pre>
+
+### Explanation
+
+| Variable               | Purpose                         |
+| ---------------------- | ------------------------------- |
+| `MAILTRAP_API_KEY`     | Authenticates with Mailtrap API |
+| `MAILTRAP_USE_SANDBOX` | Enables sandbox (testing) mode  |
+| `MAILTRAP_INBOX_ID`    | Target inbox for test emails    |
+| `MAIL_FROM_EMAIL`      | Sender address (demo domain)    |
+| `MAIL_FROM_NAME`       | Human-readable sender name      |
+
+---
+
+## 7. Email Trigger Conditions
+
+Emails are sent  **only if all conditions below are met** :
+
+* Email notifications are enabled for the job
+* The job event matches configured triggers (`SUCCESS`, `FAILURE`)
+* The job context contains a valid recipient email
+* Mailtrap Sandbox is correctly configured
+
+If any condition fails, the notification is skipped safely.
+
+---
+
+## 8. Failure Handling & Safety Guarantees
+
+Email sending is  **best-effort only** .
+
+If Mailtrap fails:
+
+* The exception is logged
+* The job state is **not affected**
+* The worker continues normally
+
+This ensures:
+
+* No job corruption
+* No retry storms
+* No cascading failures
+
+## 9. Future Enhancements
+
+Planned next steps:
+
+* Switch to Mailtrap Production Sending
+* Verified custom domain
+* HTML templates
+* Notification retry policies
+* Notification delivery audit table
+* Additional providers (Slack, Webhooks)
+
+---

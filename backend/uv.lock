@@ -316,6 +316,19 @@ wheels = [
 ]
 
 [[package]]
+name = "mailtrap"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/73/5c/0a67074bc819bfc8887bc165148c94a6c154e0ba536da7b4d2af6e011693/mailtrap-2.4.0.tar.gz", hash = "sha256:74c6a92befc1fea3ef8bcc79911d42e61c14d9b20ef435585c756693ad31808a", size = 24668, upload-time = "2025-12-04T17:06:12.83Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/45/d23889372946915be3d48c59fed65b782fc6db3c65807c3c8a9fbc5e8ba1/mailtrap-2.4.0-py3-none-any.whl", hash = "sha256:d4435bccb1225164fd99dd741d05cb1cf86ce518b16c4bd0baa8df79ecea87a3", size = 36034, upload-time = "2025-12-04T17:06:11.864Z" },
+]
+
+[[package]]
 name = "mako"
 version = "1.3.10"
 source = { registry = "https://pypi.org/simple" }
@@ -588,6 +601,7 @@ dependencies = [
     { name = "botocore" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "mailtrap" },
     { name = "psycopg2-binary" },
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-settings" },
@@ -606,6 +620,7 @@ requires-dist = [
     { name = "botocore", specifier = ">=1.42.34" },
     { name = "fastapi", specifier = ">=0.127.1" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "mailtrap", specifier = ">=2.4.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.12.5" },

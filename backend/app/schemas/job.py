@@ -12,7 +12,7 @@ class JobContext(BaseModel):
         description="Opaque user identifier from upstream system"
     )
     email: Optional[EmailStr] = Field(
-        default=None,
+        default="calov68668@helesco.com",
         description="Email address for job notifications"
     )
 

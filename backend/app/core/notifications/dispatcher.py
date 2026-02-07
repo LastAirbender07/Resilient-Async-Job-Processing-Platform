@@ -1,5 +1,6 @@
 from app.core.logging import setup_logging
 from app.core.notifications.events import JobEvent
+from app.core.notifications.providers.mailtrap import MailtrapEmailProvider
 
 logger = setup_logging()
 
@@ -7,10 +8,11 @@ logger = setup_logging()
 class NotificationDispatcher:
     """
     Dispatches job lifecycle events to configured notification channels.
-
-    This class is intentionally a no-op placeholder.
-    Provider-specific logic will be introduced later.
     """
+    def __init__(self):
+        self.providers = [
+            MailtrapEmailProvider(),
+        ]
 
     def dispatch(self, job, event: JobEvent) -> None:
         logger.info(
@@ -22,3 +24,6 @@ class NotificationDispatcher:
                 "notifications": getattr(job, "notifications", {}),
             },
         )
+
+        for provider in self.providers:
+            provider.send(job, event)
