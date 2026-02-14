@@ -1,0 +1,46 @@
+image:
+  repository: jayaraj0781/resilient-async-job-processing-platform-backend
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+backend:
+  port: 5001
+
+postgres:
+  image: postgres:16-alpine
+  host: postgres-service
+  port: 5432
+  database: notifications
+  secretName: resilient-postgres-secret
+  storage:
+    size: 5Gi
+
+redis:
+  image: redis:7-alpine
+  host: redis-service
+  port: 6379
+
+minio:
+  image: minio/minio:latest
+  host: minio
+  port: 9000
+  region: us-east-1
+  useSSL: false
+  inputBucket: resilient-async-job-processing-inputs
+  outputBucket: resilient-async-job-processing-outputs
+  secretName: resilient-minio-secret
+  accessKey: minioadmin
+  secretKey: minioadmin
+  rootUser: minioadmin
+  rootPassword: minioadmin
+  storage:
+    size: 5Gi
+
+mailtrap:
+  enabled: true
+  secretName: resilient-mailtrap-secret
+  useSandbox: true
+  inboxId: "4366358"
+  senderEmail: hello@demomailtrap.co
+  senderName: Resilient-Job-Platform
+

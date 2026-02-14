@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-minio-init
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio-init
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: minio-init
+          image: minio/mc:latest
+          env:
+            - configMapRef:
+                name: {{ include "resilient-platform.fullname" . }}-config
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until mc alias set local http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do
+                echo "Waiting for MinIO..."
+                sleep 2
+              done
+
+              mc mb --ignore-existing local/{{ .Values.minio.inputBucket }}
+              mc mb --ignore-existing local/{{ .Values.minio.outputBucket }}
+
+              echo '{"mode":"test","hello":"world","n":[67,4,34]}' > /tmp/test.json
+              mc cp /tmp/test.json local/{{ .Values.minio.inputBucket }}/test.json
+
+              echo "MinIO initialization complete"

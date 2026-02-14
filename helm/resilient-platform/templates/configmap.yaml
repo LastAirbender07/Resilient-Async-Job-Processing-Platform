@@ -18,6 +18,11 @@ data:
   S3_INPUT_BUCKET: {{ .Values.minio.inputBucket }}
   S3_OUTPUT_BUCKET: {{ .Values.minio.outputBucket }}
   S3_USE_SSL: "{{ .Values.minio.useSSL }}"
+  S3_ACCESS_KEY: {{ .Values.minio.accessKey }}
+  S3_SECRET_KEY: {{ .Values.minio.secretKey }}
+
+  MINIO_ROOT_USER: {{ .Values.minio.rootUser }}
+  MINIO_ROOT_PASSWORD: {{ .Values.minio.rootPassword }}
 
   MAILTRAP_USE_SANDBOX: "{{ .Values.mailtrap.useSandbox }}"
   MAILTRAP_INBOX_ID: "{{ .Values.mailtrap.inboxId }}"

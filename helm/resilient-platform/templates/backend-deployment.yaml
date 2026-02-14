@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-backend
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "resilient-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "resilient-platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      serviceAccountName: {{ include "resilient-platform.serviceAccountName" . }}
+
+      ## --------------------
+      ## Init container: Alembic
+      ## --------------------
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "resilient-platform.fullname" . }}-config
+            - secretRef:
+                name: {{ .Values.postgres.secretName }}
+
+      ## --------------------
+      ## Backend container
+      ## --------------------
+      containers:
+        - name: backend
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - uv
+            - run
+            - uvicorn
+            - main:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "{{ .Values.backend.port }}"
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "resilient-platform.fullname" . }}-config
+            - secretRef:
+                name: {{ .Values.postgres.secretName }}
+            - secretRef:
+                name: {{ .Values.mailtrap.secretName }}
