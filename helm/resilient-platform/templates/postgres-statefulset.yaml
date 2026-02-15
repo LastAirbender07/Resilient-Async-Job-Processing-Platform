@@ -1,49 +1,64 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "resilient-platform.fullname" . }}-postgres
+  name: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}
   labels:
     {{- include "resilient-platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: postgres
+    app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}
 spec:
-  serviceName: postgres-service
+  serviceName: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}-service
   replicas: 1
   selector:
     matchLabels:
       {{- include "resilient-platform.selectorLabels" . | nindent 6 }}
-        app.kubernetes.io/component: postgres
+      app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}
   template:
     metadata:
       labels:
         {{- include "resilient-platform.labels" . | nindent 8 }}
-        app.kubernetes.io/component: postgres
+        app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}
     spec:
       containers:
-        - name: postgres
+        - name: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}
           image: {{ .Values.postgres.image }}
           ports:
-            - containerPort: 5432
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.postgres.secretName }}
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.postgres.secretName }}
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              value: {{ .Values.postgres.database }}
+            - containerPort: {{ .Values.postgres.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "resilient-platform.fullname" . }}-config
+            - secretRef:
+                name: {{ .Values.postgres.secretName }}
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U postgres
+            initialDelaySeconds: {{ .Values.postgres.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.postgres.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.postgres.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.postgres.livenessProbe.failureThreshold }}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U postgres
+            initialDelaySeconds: {{ .Values.postgres.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.postgres.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.postgres.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.postgres.readinessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
           volumeMounts:
-            - name: data
+            - name: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}-data
               mountPath: /var/lib/postgresql/data
   volumeClaimTemplates:
     - metadata:
-        name: data
+        name: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}-data
       spec:
         accessModes: ["ReadWriteOnce"]
+        storageClassName: "standard"
         resources:
           requests:
             storage: {{ .Values.postgres.storage.size }}

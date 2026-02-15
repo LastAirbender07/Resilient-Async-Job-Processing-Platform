@@ -1,45 +1,64 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "resilient-platform.fullname" . }}-minio
+  name: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}
   labels:
     {{- include "resilient-platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: minio
+    app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}
 spec:
-  serviceName: minio
+  serviceName: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}-service
   replicas: 1
   selector:
     matchLabels:
       {{- include "resilient-platform.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: minio
+      app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}
   template:
     metadata:
       labels:
         {{- include "resilient-platform.labels" . | nindent 8 }}
-        app.kubernetes.io/component: minio
+        app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}
     spec:
       containers:
-        - name: minio
+        - name: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}
           image: {{ .Values.minio.image }}
           args:
             - server
             - /data
             - --console-address
-            - ":9001"
+            - ":{{ .Values.minio.consolePort }}"
           ports:
-            - containerPort: 9000
-            - containerPort: 9001
-          env:
+            - containerPort: {{ .Values.minio.port }}
+            - containerPort: {{ .Values.minio.consolePort }}
+          envFrom:
             - configMapRef:
                 name: {{ include "resilient-platform.fullname" . }}-config
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: {{ .Values.minio.port }}
+            initialDelaySeconds: {{ .Values.minio.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.minio.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.minio.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.minio.livenessProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: {{ .Values.minio.port }}
+            initialDelaySeconds: {{ .Values.minio.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.minio.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.minio.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.minio.readinessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.minio.resources | nindent 12 }}
           volumeMounts:
-            - name: data
+            - name: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}-data
               mountPath: /data
   volumeClaimTemplates:
     - metadata:
-        name: data
+        name: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}-data
       spec:
         accessModes: ["ReadWriteOnce"]
+        storageClassName: "standard"
         resources:
           requests:
             storage: {{ .Values.minio.storage.size }}

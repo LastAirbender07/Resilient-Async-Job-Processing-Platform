@@ -5,25 +5,78 @@ image:
 
 backend:
   port: 5001
+  resources:
+    limits:
+      cpu: "1"
+      memory: "512Mi"
+    requests:
+      cpu: "0.5"
+      memory: "256Mi"
+  livenessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
 
 postgres:
   image: postgres:16-alpine
-  host: postgres-service
+  host: postgres
   port: 5432
   database: notifications
   secretName: resilient-postgres-secret
+  resources:
+    limits:
+      cpu: "1"
+      memory: "512Mi"
+    requests:
+      cpu: "0.5"
+      memory: "256Mi"
+  livenessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
   storage:
     size: 5Gi
 
 redis:
   image: redis:7-alpine
-  host: redis-service
+  host: redis
   port: 6379
+  resources:
+    limits:
+      cpu: "1"
+      memory: "512Mi"
+    requests:
+      cpu: "0.5"
+      memory: "256Mi"
+  livenessProbe:
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
 
 minio:
   image: minio/minio:latest
   host: minio
   port: 9000
+  consolePort: 9001
   region: us-east-1
   useSSL: false
   inputBucket: resilient-async-job-processing-inputs
@@ -33,8 +86,34 @@ minio:
   secretKey: minioadmin
   rootUser: minioadmin
   rootPassword: minioadmin
+  resources:
+    limits:
+      cpu: "1"
+      memory: "512Mi"
+    requests:
+      cpu: "0.5"
+      memory: "256Mi"
+  livenessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
   storage:
     size: 5Gi
+
+worker:
+  resources:
+    limits:
+      cpu: "1"
+      memory: "512Mi"
+    requests:
+      cpu: "0.5"
+      memory: "256Mi"
 
 mailtrap:
   enabled: true
@@ -44,3 +123,7 @@ mailtrap:
   senderEmail: hello@demomailtrap.co
   senderName: Resilient-Job-Platform
 
+serviceAccount:
+  create: true
+  name: service-account
+  

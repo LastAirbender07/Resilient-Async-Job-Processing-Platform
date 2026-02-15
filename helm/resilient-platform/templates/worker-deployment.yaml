@@ -17,7 +17,7 @@ spec:
         {{- include "resilient-platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: worker
     spec:
-      serviceAccountName: {{ include "resilient-platform.serviceAccountName" . }}
+      serviceAccountName: {{ include "resilient-platform.fullname" . }}-{{ .Values.serviceAccount.name }}
       containers:
         - name: worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -33,3 +33,5 @@ spec:
                 name: {{ .Values.postgres.secretName }}
             - secretRef:
                 name: {{ .Values.mailtrap.secretName }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }} 

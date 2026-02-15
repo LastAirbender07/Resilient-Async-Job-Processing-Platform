@@ -1,25 +1,45 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "resilient-platform.fullname" . }}-redis
+  name: {{ include "resilient-platform.fullname" . }}-{{ .Values.redis.host }}
   labels:
     {{- include "resilient-platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: redis
+    app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.redis.host }}
 spec:
-  serviceName: redis-service
+  serviceName: {{ include "resilient-platform.fullname" . }}-{{ .Values.redis.host }}-service
   replicas: 1
   selector:
     matchLabels:
       {{- include "resilient-platform.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: redis
+      app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.redis.host }}
   template:
     metadata:
       labels:
         {{- include "resilient-platform.labels" . | nindent 8 }}
-        app.kubernetes.io/component: redis
+        app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.redis.host }}
     spec:
       containers:
-        - name: redis
+        - name: {{ include "resilient-platform.fullname" . }}-{{ .Values.redis.host }}
           image: {{ .Values.redis.image }}
           ports:
-            - containerPort: 6379
+            - containerPort: {{ .Values.redis.port }}
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: {{ .Values.redis.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.redis.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.redis.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.redis.livenessProbe.failureThreshold }}
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: {{ .Values.redis.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.redis.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.redis.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.redis.readinessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}

@@ -1,0 +1,559 @@
+---
+# Source: resilient-platform/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: resilient-platform-service-account
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: service-account
+---
+# Source: resilient-platform/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: resilient-platform-config
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+data:
+  POSTGRES_HOST: resilient-platform-postgres-service
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: notifications
+
+  REDIS_HOST: resilient-platform-redis-service
+  REDIS_PORT: "6379"
+
+  S3_HOST: resilient-platform-minio-service
+  S3_PORT: "9000"
+  S3_REGION: us-east-1
+  S3_INPUT_BUCKET: resilient-async-job-processing-inputs
+  S3_OUTPUT_BUCKET: resilient-async-job-processing-outputs
+  S3_USE_SSL: "false"
+  S3_ACCESS_KEY: minioadmin
+  S3_SECRET_KEY: minioadmin
+
+  MINIO_ROOT_USER: minioadmin
+  MINIO_ROOT_PASSWORD: minioadmin
+
+  MAILTRAP_USE_SANDBOX: "true"
+  MAILTRAP_INBOX_ID: "4366358"
+  MAILTRAP_SENDER_EMAIL: hello@demomailtrap.co
+  MAILTRAP_SENDER_NAME: Resilient-Job-Platform
+---
+# Source: resilient-platform/templates/backend-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: resilient-platform-backend
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      protocol: TCP
+      port: 5001
+      targetPort: 5001
+---
+# Source: resilient-platform/templates/minio-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: resilient-platform-minio-service
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: resilient-platform-minio
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/component: resilient-platform-minio
+  ports:
+    - name: resilient-platform-minio-api
+      port: 9000
+      targetPort: 9000
+    - name: resilient-platform-minio-console
+      port: 9001
+      targetPort: 9001
+      protocol: TCP
+---
+# Source: resilient-platform/templates/postgres-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: resilient-platform-postgres-service
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: resilient-platform-postgres
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/component: resilient-platform-postgres
+  ports:
+    - name: resilient-platform-postgres
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+---
+# Source: resilient-platform/templates/redis-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: resilient-platform-redis-service
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: resilient-platform-redis
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/component: resilient-platform-redis
+  ports:
+    - name: resilient-platform-redis
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+---
+# Source: resilient-platform/templates/backend-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resilient-platform-backend
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilient-platform
+      app.kubernetes.io/instance: resilient-platform
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: resilient-platform-0.1.0
+        app.kubernetes.io/name: resilient-platform
+        app.kubernetes.io/instance: resilient-platform
+        app.kubernetes.io/version: "1.16.0"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: backend
+    spec:
+      serviceAccountName: resilient-platform-service-account
+
+      ## --------------------
+      ## Init container: Alembic
+      ## --------------------
+      initContainers:
+        - name: migrate
+          image: "jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0"
+          imagePullPolicy: IfNotPresent
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: resilient-platform-config
+            - secretRef:
+                name: resilient-postgres-secret
+
+      ## --------------------
+      ## Backend container
+      ## --------------------
+      containers:
+        - name: backend
+          image: "jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0"
+          imagePullPolicy: IfNotPresent
+          command:
+            - uv
+            - run
+            - uvicorn
+            - main:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "5001"
+          ports:
+            - name: http
+              containerPort: 5001
+          envFrom:
+            - configMapRef:
+                name: resilient-platform-config
+            - secretRef:
+                name: resilient-postgres-secret
+            - secretRef:
+                name: resilient-mailtrap-secret
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: "0.5"
+              memory: 256Mi
+---
+# Source: resilient-platform/templates/worker-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resilient-platform-worker
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilient-platform
+      app.kubernetes.io/instance: resilient-platform
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: resilient-platform-0.1.0
+        app.kubernetes.io/name: resilient-platform
+        app.kubernetes.io/instance: resilient-platform
+        app.kubernetes.io/version: "1.16.0"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: resilient-platform-service-account
+      containers:
+        - name: worker
+          image: "jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0"
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - -m
+            - app.workers.worker
+          envFrom:
+            - configMapRef:
+                name: resilient-platform-config
+            - secretRef:
+                name: resilient-postgres-secret
+            - secretRef:
+                name: resilient-mailtrap-secret
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: "0.5"
+              memory: 256Mi
+---
+# Source: resilient-platform/templates/minio-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: resilient-platform-minio
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: resilient-platform-minio
+spec:
+  serviceName: resilient-platform-minio-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilient-platform
+      app.kubernetes.io/instance: resilient-platform
+      app.kubernetes.io/component: resilient-platform-minio
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: resilient-platform-0.1.0
+        app.kubernetes.io/name: resilient-platform
+        app.kubernetes.io/instance: resilient-platform
+        app.kubernetes.io/version: "1.16.0"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: resilient-platform-minio
+    spec:
+      containers:
+        - name: resilient-platform-minio
+          image: minio/minio:latest
+          args:
+            - server
+            - /data
+            - --console-address
+            - ":9001"
+          ports:
+            - containerPort: 9000
+            - containerPort: 9001
+          envFrom:
+            - configMapRef:
+                name: resilient-platform-config
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: "0.5"
+              memory: 256Mi
+          volumeMounts:
+            - name: resilient-platform-minio-data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: resilient-platform-minio-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: "standard"
+        resources:
+          requests:
+            storage: 5Gi
+---
+# Source: resilient-platform/templates/postgres-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: resilient-platform-postgres
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: resilient-platform-postgres
+spec:
+  serviceName: resilient-platform-postgres-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilient-platform
+      app.kubernetes.io/instance: resilient-platform
+      app.kubernetes.io/component: resilient-platform-postgres
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: resilient-platform-0.1.0
+        app.kubernetes.io/name: resilient-platform
+        app.kubernetes.io/instance: resilient-platform
+        app.kubernetes.io/version: "1.16.0"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: resilient-platform-postgres
+    spec:
+      containers:
+        - name: resilient-platform-postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - configMapRef:
+                name: resilient-platform-config
+            - secretRef:
+                name: resilient-postgres-secret
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U postgres
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U postgres
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: "0.5"
+              memory: 256Mi
+          volumeMounts:
+            - name: resilient-platform-postgres-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: resilient-platform-postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: "standard"
+        resources:
+          requests:
+            storage: 5Gi
+---
+# Source: resilient-platform/templates/redis-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: resilient-platform-redis
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: resilient-platform-redis
+spec:
+  serviceName: resilient-platform-redis-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilient-platform
+      app.kubernetes.io/instance: resilient-platform
+      app.kubernetes.io/component: resilient-platform-redis
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: resilient-platform-0.1.0
+        app.kubernetes.io/name: resilient-platform
+        app.kubernetes.io/instance: resilient-platform
+        app.kubernetes.io/version: "1.16.0"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: resilient-platform-redis
+    spec:
+      containers:
+        - name: resilient-platform-redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: "0.5"
+              memory: 256Mi
+---
+# Source: resilient-platform/templates/minio-init-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: resilient-platform-minio-init
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: minio-init
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      ttlSecondsAfterFinished: 300
+      backoffLimit: 3
+      containers:
+        - name: minio-init
+          image: minio/mc:latest
+          envFrom:
+            - configMapRef:
+                name: resilient-platform-config
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until mc alias set local http://resilient-platform-minio-service:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do
+                echo "Waiting for MinIO..."
+                sleep 2
+              done
+
+              mc mb --ignore-existing local/resilient-async-job-processing-inputs
+              mc mb --ignore-existing local/resilient-async-job-processing-outputs
+
+              echo '{"mode":"test","hello":"world","n":[67,4,34]}' > /tmp/test.json
+              mc cp /tmp/test.json local/resilient-async-job-processing-inputs/test.json
+
+              echo "MinIO initialization complete"

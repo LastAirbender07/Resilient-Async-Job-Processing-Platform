@@ -10,17 +10,19 @@ spec:
   template:
     spec:
       restartPolicy: OnFailure
+      ttlSecondsAfterFinished: 300
+      backoffLimit: 3
       containers:
         - name: minio-init
           image: minio/mc:latest
-          env:
+          envFrom:
             - configMapRef:
                 name: {{ include "resilient-platform.fullname" . }}-config
           command:
             - /bin/sh
             - -c
             - |
-              until mc alias set local http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do
+              until mc alias set local http://{{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}-service:{{ .Values.minio.port }} $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do
                 echo "Waiting for MinIO..."
                 sleep 2
               done

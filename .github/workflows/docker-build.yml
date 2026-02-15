@@ -10,6 +10,7 @@ on:
 
 env:
   IMAGE_NAME: jayaraj0781/resilient-async-job-processing-platform-backend
+  VALUES_FILE: helm/resilient-platform/values.yaml
   CHANGELOG: CHANGELOG.md
 
 jobs:
@@ -26,7 +27,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Extract current version from DockerHub
+    - name: Extract current version from DockerHub or fallback to values.yaml
       id: version
       run: |
         # Try fetching version from DockerHub
@@ -36,6 +37,11 @@ jobs:
           | sed 's/v//' \
           | sort -V \
           | tail -n 1)
+
+        if [ -z "$HUB_VERSION" ]; then
+          echo "📄 DockerHub has no version tags, falling back to reading version from $VALUES_FILE"
+          HUB_VERSION=$(yq '.image.backend.tag' $VALUES_FILE | sed 's/v//')
+        fi
 
         echo "🔍 Current version: v$HUB_VERSION"
 
@@ -100,6 +106,10 @@ jobs:
         echo "Image digest: ${{ steps.docker_build.outputs.digest }}"
         echo "Metadata: ${{ steps.docker_build.outputs.metadata }}"
 
+    - name: Update Helm Values with new version
+      run: |
+        yq -i '.image.tag = "${{ steps.version.outputs.new_version }}"' $VALUES_FILE
+
     - name: Update CHANGELOG
       id: update-changelog
       run: |
@@ -116,6 +126,7 @@ jobs:
           echo "- Auto-build by CI-CD pipeline"
           echo "- Updated image to $VERSION"
           echo "- Docker image pushed: ${IMAGE_NAME}:$VERSION"
+          echo "- Updated Helm values.yaml with the new tag."
           echo ""
         } >> ${CHANGELOG}
 
@@ -134,6 +145,7 @@ jobs:
           
           ### Changes
           - Updated image to `${{ steps.version.outputs.new_version }}`
+          - Updated Helm values in `${{ env.VALUES_FILE }}`
           - Docker image: `${{ env.IMAGE_NAME }}:${{ steps.version.outputs.new_version }}`
           
           ### Next Steps

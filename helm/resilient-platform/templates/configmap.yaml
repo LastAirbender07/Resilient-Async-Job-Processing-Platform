@@ -5,14 +5,14 @@ metadata:
   labels:
     {{- include "resilient-platform.labels" . | nindent 4 }}
 data:
-  POSTGRES_HOST: {{ .Values.postgres.host }}
+  POSTGRES_HOST: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}-service
   POSTGRES_PORT: "{{ .Values.postgres.port }}"
   POSTGRES_DB: {{ .Values.postgres.database }}
 
-  REDIS_HOST: {{ .Values.redis.host }}
+  REDIS_HOST: {{ include "resilient-platform.fullname" . }}-{{ .Values.redis.host }}-service
   REDIS_PORT: "{{ .Values.redis.port }}"
 
-  S3_HOST: {{ .Values.minio.host }}
+  S3_HOST: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}-service
   S3_PORT: "{{ .Values.minio.port }}"
   S3_REGION: {{ .Values.minio.region }}
   S3_INPUT_BUCKET: {{ .Values.minio.inputBucket }}

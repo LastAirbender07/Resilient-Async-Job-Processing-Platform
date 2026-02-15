@@ -1,20 +1,20 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: minio
+  name: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}-service
   labels:
     {{- include "resilient-platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: minio
+    app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}
 spec:
   type: ClusterIP
   selector:
     {{- include "resilient-platform.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: minio
+    app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}
   ports:
-    - name: api
-      port: 9000
-      targetPort: 9000
-    - name: console
-      port: 9001
-      targetPort: 9001
+    - name: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}-api
+      port: {{ .Values.minio.port }}
+      targetPort: {{ .Values.minio.port }}
+    - name: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}-console
+      port: {{ .Values.minio.consolePort }}
+      targetPort: {{ .Values.minio.consolePort }}
       protocol: TCP
