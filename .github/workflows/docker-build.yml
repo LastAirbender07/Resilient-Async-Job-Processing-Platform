@@ -30,26 +30,33 @@ jobs:
     - name: Extract current version from DockerHub or fallback to values.yaml
       id: version
       run: |
+        set -e
+        DEFAULT_VERSION="0.1.0"
+
         # Try fetching version from DockerHub
         HUB_VERSION=$(curl -s "https://hub.docker.com/v2/repositories/${{ env.IMAGE_NAME }}/tags/?page_size=100" \
           | jq -r '.results[].name' \
-          | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-          | sed 's/v//' \
+          | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
           | sort -V \
-          | tail -n 1)
+          | tail -n 1 || true)
 
         if [ -z "$HUB_VERSION" ]; then
           echo "📄 DockerHub has no version tags, falling back to reading version from $VALUES_FILE"
-          HUB_VERSION=$(yq '.image.backend.tag' $VALUES_FILE | sed 's/v//')
+          HUB_VERSION=$(yq '.image.tag' "$VALUES_FILE" 2>/dev/null | tr -d '"' || true)
+        fi
+
+        if [ -z "$HUB_VERSION" ] || [ "$HUB_VERSION" = "null" ]; then
+          echo "⚠️ No version found anywhere. Using default: $DEFAULT_VERSION"
+          HUB_VERSION=$DEFAULT_VERSION
         fi
 
         echo "🔍 Current version: v$HUB_VERSION"
 
         # Split into MAJOR MINOR PATCH
         IFS='.' read -ra PART <<< "$HUB_VERSION"
-        MAJOR=${PART[0]}
-        MINOR=${PART[1]}
-        PATCH=${PART[2]}
+        MAJOR=${PART[0]:-0}
+        MINOR=${PART[1]:-0}
+        PATCH=${PART[2]:-0}
 
         # Increment patch
         PATCH=$((PATCH + 1))
@@ -65,13 +72,12 @@ jobs:
           MAJOR=$((MAJOR + 1))
         fi
 
-        NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+        NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
 
         echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
         echo "current_version=$HUB_VERSION" >> $GITHUB_OUTPUT
         echo "🚀 Bumping version to $NEW_VERSION"
         echo "Trying to login to DockerHub..."
-        echo "Creds: ${{ secrets.DOCKERHUB_USERNAME }} / ${{ secrets.DOCKERHUB_TOKEN }}"
 
     - name: Login to DockerHub
       uses: docker/login-action@v3
