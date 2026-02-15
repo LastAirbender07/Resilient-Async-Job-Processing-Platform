@@ -50,7 +50,7 @@ jobs:
           HUB_VERSION=$DEFAULT_VERSION
         fi
 
-        echo "🔍 Current version: v$HUB_VERSION"
+        echo "🔍 Current version: $HUB_VERSION"
 
         # Split into MAJOR MINOR PATCH
         IFS='.' read -ra PART <<< "$HUB_VERSION"
