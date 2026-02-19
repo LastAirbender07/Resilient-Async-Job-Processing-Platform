@@ -7,11 +7,10 @@ metadata:
     app.kubernetes.io/component: minio-init
 spec:
   backoffLimit: 3
+  ttlSecondsAfterFinished: 300
   template:
     spec:
       restartPolicy: OnFailure
-      ttlSecondsAfterFinished: 300
-      backoffLimit: 3
       containers:
         - name: minio-init
           image: minio/mc:latest

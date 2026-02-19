@@ -9,8 +9,8 @@ backend:
       cpu: "1"
       memory: "512Mi"
     requests:
-      cpu: "0.5"
-      memory: "256Mi"
+      cpu: "100m"
+      memory: "128Mi"
   livenessProbe:
     initialDelaySeconds: 30
     periodSeconds: 10
@@ -32,8 +32,8 @@ postgres:
       cpu: "1"
       memory: "512Mi"
     requests:
-      cpu: "0.5"
-      memory: "256Mi"
+      cpu: "100m"
+      memory: "128Mi"
   livenessProbe:
     initialDelaySeconds: 30
     periodSeconds: 10
@@ -55,8 +55,8 @@ redis:
       cpu: "1"
       memory: "512Mi"
     requests:
-      cpu: "0.5"
-      memory: "256Mi"
+      cpu: "100m"
+      memory: "128Mi"
   livenessProbe:
     initialDelaySeconds: 20
     periodSeconds: 10
@@ -86,8 +86,8 @@ minio:
       cpu: "1"
       memory: "512Mi"
     requests:
-      cpu: "0.5"
-      memory: "256Mi"
+      cpu: "100m"
+      memory: "128Mi"
   livenessProbe:
     initialDelaySeconds: 30
     periodSeconds: 10
@@ -106,8 +106,8 @@ worker:
       cpu: "1"
       memory: "512Mi"
     requests:
-      cpu: "0.5"
-      memory: "256Mi"
+      cpu: "100m"
+      memory: "128Mi"
 mailtrap:
   enabled: true
   secretName: resilient-mailtrap-secret
