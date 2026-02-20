@@ -1,8 +1,8 @@
 // lib/api.ts — Typed backend API client
-// API_URL is a relative path — Next.js rewrites /backend/* to the real backend at runtime.
-// Never use an absolute URL here: NEXT_PUBLIC_* vars are baked into the client bundle
-// at build time and cannot be changed by Kubernetes env vars at runtime.
-export const API_URL = "/backend";
+// API_URL points to the catch-all proxy at /api/backend/[...path].
+// That route reads BACKEND_API_URL at request time (truly runtime — not build time).
+// Never use NEXT_PUBLIC_ here: those are baked into the client bundle at build time.
+export const API_URL = "/api/backend";
 
 export type JobStatus =
   | "CREATED"
