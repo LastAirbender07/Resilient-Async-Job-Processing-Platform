@@ -14,3 +14,8 @@
 - Auto-build by CI-CD pipeline
 - Docker image pushed: jayaraj0781/resilient-async-job-processing-platform-frontend:1.0.1
 - Updated helm/resilient-platform/values.yaml (.frontend.image.tag)
+## [frontend] 1.0.2 — 20260220174537
+- Auto-build by CI-CD pipeline
+- Docker image pushed: jayaraj0781/resilient-async-job-processing-platform-frontend:1.0.2
+- Updated helm/resilient-platform/values.yaml (.frontend.image.tag)
+
