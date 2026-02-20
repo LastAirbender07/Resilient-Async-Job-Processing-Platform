@@ -6,7 +6,7 @@ metadata:
     {{- include "resilient-platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
 spec:
-  replicas: 1
+  replicas: {{ .Values.backend.replicas | default 1 }}
   selector:
     matchLabels:
       {{- include "resilient-platform.selectorLabels" . | nindent 6 }}

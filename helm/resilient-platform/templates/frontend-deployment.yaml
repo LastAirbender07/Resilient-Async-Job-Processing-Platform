@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-frontend
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.frontend.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "resilient-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        {{- include "resilient-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend
+    spec:
+      serviceAccountName: {{ include "resilient-platform.serviceAccountName" . }}
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          # All env vars injected at runtime from the shared ConfigMap.
+          # NEXT_PUBLIC_BACKEND_API_URL is constructed via Helm fullname template
+          # so it resolves correctly regardless of release name.
+          envFrom:
+            - configMapRef:
+                name: {{ include "resilient-platform.fullname" . }}-config
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: {{ .Values.frontend.livenessProbe.initialDelaySeconds | default 20 }}
+            periodSeconds: {{ .Values.frontend.livenessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.frontend.livenessProbe.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.frontend.livenessProbe.failureThreshold | default 3 }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: {{ .Values.frontend.readinessProbe.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ .Values.frontend.readinessProbe.periodSeconds | default 5 }}
+            timeoutSeconds: {{ .Values.frontend.readinessProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.frontend.readinessProbe.failureThreshold | default 3 }}

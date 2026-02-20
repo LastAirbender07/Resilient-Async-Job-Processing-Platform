@@ -28,3 +28,5 @@ data:
   MAILTRAP_INBOX_ID: "{{ .Values.mailtrap.inboxId }}"
   MAILTRAP_SENDER_EMAIL: {{ .Values.mailtrap.senderEmail }}
   MAILTRAP_SENDER_NAME: {{ .Values.mailtrap.senderName }}
+
+  NEXT_PUBLIC_BACKEND_API_URL: http://{{ include "resilient-platform.fullname" . }}-backend:{{ .Values.backend.port }}

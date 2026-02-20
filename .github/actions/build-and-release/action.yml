@@ -1,0 +1,185 @@
+name: Build and Release Component
+description: |
+  Bumps semver from DockerHub, builds & pushes a Docker image, updates the
+  Helm values.yaml, appends to CHANGELOG, and opens a release PR.
+  Designed to be called from a workflow job that has already checked out the repo.
+
+inputs:
+  # ── Required ──────────────────────────────────────────────────────────────
+  image_name:
+    description: "Full DockerHub image name (e.g. user/repo-frontend)"
+    required: true
+  context:
+    description: "Docker build context path (e.g. ./frontend)"
+    required: true
+  dockerfile:
+    description: "Path to the Dockerfile (e.g. ./frontend/Dockerfile)"
+    required: true
+  values_key:
+    description: "yq key path to update in values.yaml (e.g. .frontend.image.tag)"
+    required: true
+  component:
+    description: "Human label used in PR title, branch, and CHANGELOG (e.g. frontend)"
+    required: true
+  dockerhub_username:
+    description: "DockerHub username (pass ${{ secrets.DOCKERHUB_USERNAME }})"
+    required: true
+  dockerhub_token:
+    description: "DockerHub access token (pass ${{ secrets.DOCKERHUB_TOKEN }})"
+    required: true
+
+  # ── Optional (have sensible defaults) ─────────────────────────────────────
+  values_file:
+    description: "Path to the Helm values.yaml"
+    required: false
+    default: "helm/resilient-platform/values.yaml"
+  changelog:
+    description: "Path to CHANGELOG.md"
+    required: false
+    default: "CHANGELOG.md"
+  default_version:
+    description: "Fallback version if DockerHub returns nothing"
+    required: false
+    default: "0.1.0"
+  platforms:
+    description: "Docker build target platforms"
+    required: false
+    default: "linux/amd64,linux/arm64"
+
+outputs:
+  new_version:
+    description: "The semver version that was built and pushed"
+    value: ${{ steps.version.outputs.new_version }}
+  date_time:
+    description: "Build timestamp (YYYYMMDDHHmmss)"
+    value: ${{ steps.changelog.outputs.date_time }}
+
+runs:
+  using: composite
+  steps:
+
+    # ── 1. Resolve next semver ───────────────────────────────────────────────
+    - name: Bump semver
+      id: version
+      shell: bash
+      run: |
+        set -e
+        DEFAULT_VERSION="${{ inputs.default_version }}"
+
+        # Try latest semver tag from DockerHub
+        HUB_VERSION=$(curl -s \
+          "https://hub.docker.com/v2/repositories/${{ inputs.image_name }}/tags/?page_size=100" \
+          | jq -r '.results[].name' \
+          | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+          | sort -V | tail -n 1 || true)
+
+        # Fall back to values.yaml
+        if [ -z "$HUB_VERSION" ]; then
+          echo "📄 DockerHub has no semver tags — reading ${{ inputs.values_key }} from ${{ inputs.values_file }}"
+          HUB_VERSION=$(yq '${{ inputs.values_key }}' "${{ inputs.values_file }}" 2>/dev/null \
+            | tr -d '"' || true)
+        fi
+
+        # Last resort: the configured default
+        if [ -z "$HUB_VERSION" ] || [ "$HUB_VERSION" = "null" ] || [ "$HUB_VERSION" = "latest" ]; then
+          echo "⚠️  No semver found — using default: $DEFAULT_VERSION"
+          HUB_VERSION=$DEFAULT_VERSION
+        fi
+
+        echo "🔍 Current version: $HUB_VERSION"
+
+        IFS='.' read -ra P <<< "$HUB_VERSION"
+        MAJOR=${P[0]:-0}; MINOR=${P[1]:-0}; PATCH=${P[2]:-0}
+        PATCH=$((PATCH + 1))
+        if [ "$PATCH" -gt 9 ]; then PATCH=0; MINOR=$((MINOR + 1)); fi
+        if [ "$MINOR" -gt 9 ]; then MINOR=0; MAJOR=$((MAJOR + 1)); fi
+        NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+        echo "🚀 ${{ inputs.component }}: $HUB_VERSION → $NEW_VERSION"
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+    # ── 2. Authenticate with DockerHub ───────────────────────────────────────
+    - name: Login to DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ inputs.dockerhub_username }}
+        password: ${{ inputs.dockerhub_token }}
+
+    # ── 3. Set up multi-arch build ───────────────────────────────────────────
+    - name: Setup QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # ── 4. Build & push ──────────────────────────────────────────────────────
+    - name: Build and Push Docker image
+      id: docker_build
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.dockerfile }}
+        platforms: ${{ inputs.platforms }}
+        push: true
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        tags: |
+          ${{ inputs.image_name }}:${{ steps.version.outputs.new_version }}
+          ${{ inputs.image_name }}:latest
+
+    - name: Echo build summary
+      shell: bash
+      run: |
+        echo "✅ ${{ inputs.image_name }}:${{ steps.version.outputs.new_version }} pushed"
+        echo "   Digest: ${{ steps.docker_build.outputs.digest }}"
+
+    # ── 5. Bump version in Helm values.yaml ─────────────────────────────────
+    - name: Update Helm values.yaml
+      shell: bash
+      run: |
+        yq -i '${{ inputs.values_key }} = "${{ steps.version.outputs.new_version }}"' \
+          "${{ inputs.values_file }}"
+
+    # ── 6. Append to CHANGELOG ───────────────────────────────────────────────
+    - name: Update CHANGELOG
+      id: changelog
+      shell: bash
+      run: |
+        DATE_TIME=$(date +"%Y%m%d%H%M%S")
+        VERSION="${{ steps.version.outputs.new_version }}"
+        CHANGELOG="${{ inputs.changelog }}"
+        [ ! -f "$CHANGELOG" ] && echo "# CHANGELOG" > "$CHANGELOG"
+        {
+          echo "## [${{ inputs.component }}] $VERSION — $DATE_TIME"
+          echo "- Auto-build by CI-CD pipeline"
+          echo "- Docker image pushed: ${{ inputs.image_name }}:$VERSION"
+          echo "- Updated ${{ inputs.values_file }} (${{ inputs.values_key }})"
+          echo ""
+        } >> "$CHANGELOG"
+        echo "date_time=$DATE_TIME" >> $GITHUB_OUTPUT
+
+    # ── 7. Open release PR ───────────────────────────────────────────────────
+    - name: Create Release PR
+      uses: peter-evans/create-pull-request@v6
+      with:
+        commit-message: "chore(${{ inputs.component }}): release ${{ steps.version.outputs.new_version }}"
+        title: "[${{ inputs.component }}] Release ${{ steps.version.outputs.new_version }} — ${{ steps.changelog.outputs.date_time }}"
+        body: |
+          ## ${{ inputs.component }} Release
+
+          | | |
+          |---|---|
+          | **Version** | `${{ steps.version.outputs.new_version }}` |
+          | **Image** | `${{ inputs.image_name }}:${{ steps.version.outputs.new_version }}` |
+          | **Build date** | `${{ steps.changelog.outputs.date_time }}` |
+          | **Helm key** | `${{ inputs.values_key }}` in `${{ inputs.values_file }}` |
+
+          ### Deploy
+          ```bash
+          helm upgrade --install resilient-platform ./helm/resilient-platform -n resilient-platform
+          ```
+
+          _Auto-generated by CI/CD pipeline_
+        base: main
+        labels: "auto-generated, release, ${{ inputs.component }}"
+        branch: "release/${{ inputs.component }}-${{ steps.version.outputs.new_version }}-${{ steps.changelog.outputs.date_time }}"

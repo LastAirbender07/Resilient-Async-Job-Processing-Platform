@@ -1,72 +1,34 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { listJobs, retryJob, JOB_TYPE_LABELS, type JobStatusResponse } from "@/lib/api";
+import { useJobHistory } from "@/hooks/useJobHistory";
 import { StatusBadge } from "./StatusBadge";
+import { JOB_TYPE_LABELS } from "@/lib/api";
 import { RefreshCw, History, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface JobHistoryProps {
-    refreshTrigger: number;    // increment to force a refresh
+    refreshTrigger: number;
     onSelectJob: (jobId: string) => void;
 }
 
 export function JobHistory({ refreshTrigger, onSelectJob }: JobHistoryProps) {
-    const [jobs, setJobs] = useState<JobStatusResponse[]>([]);
-    const [total, setTotal] = useState(0);
-    const [page, setPage] = useState(0);
-    const [loading, setLoading] = useState(false);
-    const [retryingId, setRetryingId] = useState<string | null>(null);
-
-    const LIMIT = 8;
-
-    const fetchJobs = useCallback(async () => {
-        setLoading(true);
-        try {
-            const data = await listJobs(LIMIT, page * LIMIT);
-            setJobs(data.items);
-            setTotal(data.total);
-        } catch {
-            /* ignore */
-        } finally {
-            setLoading(false);
-        }
-    }, [page]);
-
-    useEffect(() => { fetchJobs(); }, [fetchJobs, refreshTrigger]);
-
-    // Auto-refresh every 5s if any non-terminal jobs exist
-    useEffect(() => {
-        const hasActive = jobs.some((j) => !["COMPLETED", "FAILED", "DEAD"].includes(j.status));
-        if (!hasActive) return;
-        const id = setInterval(fetchJobs, 5000);
-        return () => clearInterval(id);
-    }, [jobs, fetchJobs]);
-
-    const handleRetry = async (jobId: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        setRetryingId(jobId);
-        try {
-            await retryJob(jobId);
-            await fetchJobs();
-        } catch {
-            /* ignore */
-        } finally {
-            setRetryingId(null);
-        }
-    };
-
-    const totalPages = Math.ceil(total / LIMIT);
+    const {
+        jobs, total, page, totalPages, loading,
+        retryingId, refresh, goToPage, retry,
+    } = useJobHistory(refreshTrigger);
 
     return (
         <div className="card">
+            {/* Header row */}
             <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-2">
-                    <div className="icon-wrapper"><History className="w-4 h-4 text-violet-400" /></div>
+                    <div className="icon-wrapper">
+                        <History className="w-4 h-4 text-violet-400" />
+                    </div>
                     <h2 className="section-title">Job History</h2>
                     <span className="ml-1 text-xs text-slate-600">({total})</span>
                 </div>
                 <button
-                    onClick={fetchJobs}
+                    onClick={refresh}
                     className="p-1.5 rounded-lg text-slate-500 hover:text-violet-400 hover:bg-white/5 transition-colors"
                     title="Refresh"
                 >
@@ -82,7 +44,10 @@ export function JobHistory({ refreshTrigger, onSelectJob }: JobHistoryProps) {
                         <thead>
                             <tr className="border-b border-white/5">
                                 {["Job ID", "Type", "Input File", "Status", "Created", ""].map((h) => (
-                                    <th key={h} className="pb-3 text-left text-xs text-slate-500 font-semibold uppercase tracking-wide pr-4 last:pr-0">
+                                    <th
+                                        key={h}
+                                        className="pb-3 text-left text-xs text-slate-500 font-semibold uppercase tracking-wide pr-4 last:pr-0"
+                                    >
                                         {h}
                                     </th>
                                 ))}
@@ -90,7 +55,9 @@ export function JobHistory({ refreshTrigger, onSelectJob }: JobHistoryProps) {
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {jobs.map((job) => {
-                                const canRetry = (job.status === "FAILED" || job.status === "DEAD") && job.retry_count < job.max_retries;
+                                const canRetry =
+                                    (job.status === "FAILED" || job.status === "DEAD") &&
+                                    job.retry_count < job.max_retries;
                                 return (
                                     <tr
                                         key={job.job_id}
@@ -118,10 +85,12 @@ export function JobHistory({ refreshTrigger, onSelectJob }: JobHistoryProps) {
                                             {canRetry && (
                                                 <button
                                                     className="retry-btn-sm"
-                                                    onClick={(e) => handleRetry(job.job_id, e)}
+                                                    onClick={(e) => retry(job.job_id, e)}
                                                     disabled={retryingId === job.job_id}
                                                 >
-                                                    <RefreshCw className={`w-3 h-3 ${retryingId === job.job_id ? "animate-spin" : ""}`} />
+                                                    <RefreshCw
+                                                        className={`w-3 h-3 ${retryingId === job.job_id ? "animate-spin" : ""}`}
+                                                    />
                                                     Retry
                                                 </button>
                                             )}
@@ -143,14 +112,14 @@ export function JobHistory({ refreshTrigger, onSelectJob }: JobHistoryProps) {
                     <div className="flex gap-2">
                         <button
                             className="pagination-btn"
-                            onClick={() => setPage((p) => Math.max(0, p - 1))}
+                            onClick={() => goToPage(Math.max(0, page - 1))}
                             disabled={page === 0}
                         >
                             <ChevronLeft className="w-3.5 h-3.5" /> Prev
                         </button>
                         <button
                             className="pagination-btn"
-                            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                            onClick={() => goToPage(Math.min(totalPages - 1, page + 1))}
                             disabled={page === totalPages - 1}
                         >
                             Next <ChevronRight className="w-3.5 h-3.5" />

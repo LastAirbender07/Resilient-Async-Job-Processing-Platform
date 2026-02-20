@@ -1,6 +1,9 @@
-// app/api/result/route.ts — Fetches output file from MinIO and streams to browser
+// app/api/result/route.ts
+// Streams the output file from MinIO directly to the browser.
+// Does NOT buffer the whole file in memory — safe for large outputs.
 import { NextRequest, NextResponse } from "next/server";
-import { getMinioClient, OUTPUT_BUCKET } from "@/lib/minio-client";
+import { getMinioClient, getOutputBucket } from "@/lib/minio-client";
+import { Readable } from "stream";
 
 export async function GET(req: NextRequest) {
     const key = req.nextUrl.searchParams.get("key");
@@ -10,16 +13,13 @@ export async function GET(req: NextRequest) {
 
     try {
         const client = getMinioClient();
-        const stream = await client.getObject(OUTPUT_BUCKET, key);
+        const bucket = getOutputBucket(); // lazy — only called at request time, not build time
+        const nodeStream = await client.getObject(bucket, key);
 
-        const chunks: Buffer[] = [];
-        for await (const chunk of stream) {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        }
-        const buffer = Buffer.concat(chunks);
-        const text = buffer.toString("utf-8");
+        // Bridge Node.js Readable → Web ReadableStream so Next.js can stream it
+        const webStream = Readable.toWeb(nodeStream) as ReadableStream;
 
-        return new NextResponse(text, {
+        return new NextResponse(webStream, {
             status: 200,
             headers: { "Content-Type": "text/plain; charset=utf-8" },
         });
