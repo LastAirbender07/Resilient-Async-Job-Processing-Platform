@@ -17,7 +17,7 @@ spec:
         {{- include "resilient-platform.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
     spec:
-      serviceAccountName: {{ include "resilient-platform.serviceAccountName" . }}
+      serviceAccountName: {{ include "resilient-platform.fullname" . }}-{{ .Values.serviceAccount.name }}
       containers:
         - name: frontend
           image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"

@@ -3,7 +3,6 @@
 "use client";
 
 import { Zap, Activity, Github } from "lucide-react";
-import { API_URL } from "@/lib/api";
 import { useBackendHealth } from "@/hooks/useBackendHealth";
 
 export function Header() {
@@ -89,7 +88,7 @@ export function Header() {
 
                     {/* API Docs link — uses env var, no hardcoded localhost */}
                     <a
-                        href={`${API_URL}/docs`}
+                        href="/backend/docs"
                         target="_blank"
                         rel="noreferrer"
                         style={{
