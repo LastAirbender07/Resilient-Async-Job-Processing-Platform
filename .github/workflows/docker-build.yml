@@ -12,51 +12,74 @@ on:
 jobs:
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # BACKEND — triggers on backend/** changes
+  # DETECT — figure out which folders changed
+  # dorny/paths-filter outputs true/false per path group.
+  # workflow_dispatch has no commit diff, so we default both to true.
+  # ═══════════════════════════════════════════════════════════════════════════
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      backend:  ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Filter changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BACKEND — runs only when backend/** changed (or manual trigger)
   # ═══════════════════════════════════════════════════════════════════════════
   backend:
     name: Backend — Build & Release
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'backend/')
     steps:
       - uses: actions/checkout@v4
 
       - name: Build and Release — Backend
         uses: ./.github/actions/build-and-release
         with:
-          image_name:   jayaraj0781/resilient-async-job-processing-platform-backend
-          context:      ./backend
-          dockerfile:   ./backend/Dockerfile
-          values_key:   .image.tag
-          component:    backend
+          image_name:         jayaraj0781/resilient-async-job-processing-platform-backend
+          context:            ./backend
+          dockerfile:         ./backend/Dockerfile
+          values_key:         .image.tag
+          component:          backend
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token:    ${{ secrets.DOCKERHUB_TOKEN }}
 
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # FRONTEND — triggers on frontend/** changes
+  # FRONTEND — runs only when frontend/** changed (or manual trigger)
   # ═══════════════════════════════════════════════════════════════════════════
   frontend:
     name: Frontend — Build & Release
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      contains(toJson(github.event.commits.*.modified + github.event.commits.*.added + github.event.commits.*.removed), 'frontend/')
     steps:
       - uses: actions/checkout@v4
 
       - name: Build and Release — Frontend
         uses: ./.github/actions/build-and-release
         with:
-          image_name:   jayaraj0781/resilient-async-job-processing-platform-frontend
-          context:      ./frontend
-          dockerfile:   ./frontend/Dockerfile
-          values_key:   .frontend.image.tag
-          component:    frontend
+          image_name:         jayaraj0781/resilient-async-job-processing-platform-frontend
+          context:            ./frontend
+          dockerfile:         ./frontend/Dockerfile
+          values_key:         .frontend.image.tag
+          component:          frontend
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token:    ${{ secrets.DOCKERHUB_TOKEN }}
-          # Note: NEXT_PUBLIC_BACKEND_API_URL is intentionally NOT passed as a
-          # build-arg. It is injected at pod runtime via the Helm ConfigMap,
-          # so the same image works across dev / staging / prod without rebuilding.
+          # NEXT_PUBLIC_BACKEND_API_URL is intentionally NOT a build-arg.
+          # Injected at pod runtime via the Helm ConfigMap — same image works
+          # across dev / staging / prod without rebuilding.
