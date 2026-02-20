@@ -22,10 +22,10 @@ inputs:
     description: "Human label used in PR title, branch, and CHANGELOG (e.g. frontend)"
     required: true
   dockerhub_username:
-    description: "DockerHub username (pass ${{ secrets.DOCKERHUB_USERNAME }})"
+    description: "DockerHub username — pass secrets.DOCKERHUB_USERNAME from the caller workflow"
     required: true
   dockerhub_token:
-    description: "DockerHub access token (pass ${{ secrets.DOCKERHUB_TOKEN }})"
+    description: "DockerHub access token — pass secrets.DOCKERHUB_TOKEN from the caller workflow"
     required: true
 
   # ── Optional (have sensible defaults) ─────────────────────────────────────
