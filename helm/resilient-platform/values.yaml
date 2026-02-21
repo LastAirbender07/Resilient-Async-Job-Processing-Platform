@@ -118,7 +118,7 @@ mailtrap:
 frontend:
   image:
     repository: jayaraj0781/resilient-async-job-processing-platform-frontend
-    tag: "1.0.4"
+    tag: "1.0.5"
     pullPolicy: IfNotPresent
   replicas: 1
   service:
