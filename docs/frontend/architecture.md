@@ -78,10 +78,11 @@ DropZone (UI event) → useFileUpload.validateAndSetFile()
     │
     ▼  [on submit]
 useFileUpload.uploadToMinio()
-    ├─ GET /api/presign?filename=x.csv   ← Next.js route ← MinIO SDK (server)
-    │       returns { url, key }
-    └─ XHR PUT <presigned url>           ← browser → MinIO directly
-           (with progress events)
+    │
+    ▼
+    PUT /api/minio-upload?filename=x.csv ← Next.js route
+    │                                     (real XHR progress events)
+    └─ streams body → MinIO SDK (server-side, cluster DNS)
     │
     ▼
 lib/api.ts createJob({ job_type, input_file_path: key })
@@ -120,21 +121,22 @@ GET http://backend:5001/jobs/:id
 
 These run inside Next.js server — the browser never calls MinIO directly.
 
-| Route          | Method | Purpose                           | Key detail                              |
-| -------------- | ------ | --------------------------------- | --------------------------------------- |
-| `/api/presign` | GET    | Returns a MinIO presigned PUT URL | 15-min TTL, validates extension         |
-| `/api/upload`  | POST   | Small-file fallback (multipart)   | Kept for compatibility                  |
-| `/api/result`  | GET    | Streams output file from MinIO    | Uses `Readable.toWeb()` — no RAM buffer |
+| Route                 | Method | Purpose                                     | Key detail                               |
+| --------------------- | ------ | ------------------------------------------- | ---------------------------------------- |
+| `/api/minio-upload`   | PUT    | Streams file to MinIO input bucket          | Server-side proxy, avoids exposing MinIO |
+| `/api/result`         | GET    | Streams output file from MinIO              | Uses `Readable.toWeb()` — no RAM buffer  |
+| `/api/minio-purge`    | DELETE | Deletes all files except `test.json`        | Admin function to clear storage          |
+| `/api/backend/[...p]` | ANY    | Catch-all proxy to the real backend service | Solves Next.js build-time env var baking |
 
-### Why Presigned URLs for Upload?
+### Why a Server-Side Streaming Proxy?
 
-The original implementation buffered the entire file in the Next.js server before sending it to MinIO. For a platform designed to process large datasets, this is a bottleneck — the server RAM becomes the limiting factor.
+The original implementation used Presigned URLs to allow the browser to upload directly to MinIO. However, that required the browser to resolve the MinIO cluster DNS (`resilient-platform-minio-service:9000`), which is impossible without exposing MinIO externally via a LoadBalancer or NodePort.
 
-With presigned URLs:
-- Browser uploads **directly to MinIO** (no data touches the Next.js server)
-- Upload speed is no longer limited by the Node.js process
-- Real `XMLHttpRequest` progress events work natively
-- Files of any size are supported (up to MinIO's object size limit)
+With the `/api/minio-upload` route:
+- The browser uploads to the Next.js API route (`PUT /api/minio-upload`).
+- Real `XMLHttpRequest` progress events work natively from browser to Next.js.
+- Next.js **streams** the request body directly to MinIO over the internal cluster network.
+- No files are buffered in Next.js RAM. Files of any size are supported (up to MinIO's limits).
 
 ---
 

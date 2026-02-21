@@ -51,7 +51,7 @@ kubectl port-forward svc/resilient-platform-backend 5001:5001 -n resilient-platf
 kubectl port-forward svc/resilient-platform-minio-service 9000:9000 9001:9001 -n resilient-platform
 ```
 
-> ⚠️ Port **9000** is the MinIO S3 API (used by the app). Port **9001** is the MinIO Console UI. Both must be forwarded if you want the upload/result routes to work locally.
+> ⚠️ Port **9000** is the MinIO S3 API (used by the Next.js API routes). Port **9001** is the MinIO Console UI. You only need to port-forward 9000 if you want the `PUT /api/minio-upload` and `GET /api/result` proxy routes to work locally. The Next.js server handles the connection to MinIO, not the browser.
 
 ### Run Dev Server
 

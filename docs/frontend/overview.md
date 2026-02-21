@@ -14,6 +14,7 @@ The frontend is the user-facing surface of the **Resilient Async Job Processing 
 3. **Track the job live** — polling status until it reaches a terminal state
 4. **Display results** — streaming the output file back from MinIO
 5. **Show job history** — paginated list of all past jobs with inline retry
+6. **Clear storage** — an admin purge button to delete all MinIO files (except the demo `test.json`)
 
 It talks to two things:
 
