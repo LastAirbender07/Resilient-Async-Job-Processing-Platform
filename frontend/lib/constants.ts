@@ -23,6 +23,6 @@ export const PROGRESS_STEPS: JobStatus[] = ["QUEUED", "PROCESSING", "COMPLETED"]
 /** Accepted file extensions for job input files. */
 export const ACCEPTED_EXTENSIONS = ["json", "csv"] as const;
 
-/** Max file size for a single-PUT presigned upload (500 MB).
- *  Files larger than this would need multipart upload (future work). */
+/** Max file size accepted by the /api/minio-upload server-side proxy (500 MB).
+ *  Files larger than this would need chunked/multipart upload (future work). */
 export const MAX_SINGLE_PUT_BYTES = 500 * 1024 * 1024;

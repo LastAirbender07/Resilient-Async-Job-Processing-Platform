@@ -1,6 +1,10 @@
 // hooks/useFileUpload.ts
-// Responsibility: file validation, presigned-URL fetch, direct-to-MinIO upload with progress.
-// This keeps all upload logic out of UploadPanel — the component just renders state.
+// Responsibility: file validation, server-proxied MinIO upload with XHR progress.
+//
+// Upload flow:
+//   XHR PUT /api/minio-upload?filename=x.csv  (raw file body)
+//     → Next.js server streams to MinIO via internal cluster DNS
+//     → No browser-to-MinIO connection needed (browser can't resolve cluster DNS)
 "use client";
 
 import { useState, useCallback } from "react";
@@ -19,7 +23,7 @@ interface UseFileUploadResult extends UploadState {
     validateAndSetFile: (f: File) => void;
     clearFile: (e: React.MouseEvent) => void;
     selectTestJson: () => void;
-    /** Uploads the selected file to MinIO via a presigned URL.
+    /** Uploads the selected file to MinIO via the server-side proxy.
      *  Returns the MinIO object key on success, throws on error. */
     uploadToMinio: () => Promise<string>;
 }
@@ -61,7 +65,8 @@ export function useFileUpload(): UseFileUploadResult {
     }, []);
 
     /**
-     * Uploads `file` to MinIO via a presigned PUT URL with real XHR progress events.
+     * Uploads `file` to MinIO via the /api/minio-upload proxy with real XHR progress events.
+     * The Next.js server streams the body to MinIO — the browser never contacts MinIO directly.
      * Returns the MinIO object key to pass to createJob().
      */
     const uploadToMinio = useCallback(async (): Promise<string> => {
@@ -72,24 +77,13 @@ export function useFileUpload(): UseFileUploadResult {
         setProgress(0);
 
         try {
-            // Step 1: Ask our API route for a short-lived presigned URL
-            const presignRes = await fetch(
-                `/api/presign?filename=${encodeURIComponent(file.name)}`
-            );
-            if (!presignRes.ok) {
-                const err = await presignRes.json();
-                throw new Error(err.error || "Failed to get upload URL");
-            }
-            const { url, key } = await presignRes.json();
+            const key = file.name;
 
-            // Step 2: PUT the file straight to MinIO with progress tracking via XHR
             await new Promise<void>((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
-                xhr.open("PUT", url);
-                xhr.setRequestHeader(
-                    "Content-Type",
-                    file.type || "application/octet-stream"
-                );
+                xhr.open("PUT", `/api/minio-upload?filename=${encodeURIComponent(key)}`);
+                xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+                xhr.setRequestHeader("Content-Length", String(file.size));
 
                 xhr.upload.addEventListener("progress", (e) => {
                     if (e.lengthComputable) {
@@ -102,7 +96,11 @@ export function useFileUpload(): UseFileUploadResult {
                         setProgress(100);
                         resolve();
                     } else {
-                        reject(new Error(`Upload failed with status ${xhr.status}`));
+                        let msg = `Upload failed (${xhr.status})`;
+                        try {
+                            msg = JSON.parse(xhr.responseText).error ?? msg;
+                        } catch { /* ignore */ }
+                        reject(new Error(msg));
                     }
                 });
 
@@ -110,21 +108,11 @@ export function useFileUpload(): UseFileUploadResult {
                 xhr.send(file);
             });
 
-            return key as string;
+            return key;
         } finally {
             setUploading(false);
         }
     }, [file, useTestJson]);
 
-    return {
-        file,
-        useTestJson,
-        uploading,
-        progress,
-        error,
-        validateAndSetFile,
-        clearFile,
-        selectTestJson,
-        uploadToMinio,
-    };
+    return { file, useTestJson, uploading, progress, error, validateAndSetFile, clearFile, selectTestJson, uploadToMinio };
 }

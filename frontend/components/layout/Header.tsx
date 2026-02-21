@@ -4,14 +4,16 @@
 
 import { Zap, Activity, Github } from "lucide-react";
 import { useBackendHealth } from "@/hooks/useBackendHealth";
+import { useMinioHealth } from "@/hooks/useMinioHealth";
 
 export function Header() {
     const health = useBackendHealth();
+    const minioHealth = useMinioHealth();
 
-    const statusColor =
-        health === "checking" ? "#475569" : health === "online" ? "#34d399" : "#f87171";
-    const statusLabel =
-        health === "checking" ? "Checking…" : health === "online" ? "Backend Online" : "Backend Offline";
+    const statusColor = (h: string) =>
+        h === "checking" ? "#475569" : h === "online" ? "#34d399" : "#f87171";
+    const statusLabel = (h: string, name: string) =>
+        h === "checking" ? `${name} Checking…` : h === "online" ? `${name} Online` : `${name} Offline`;
 
     return (
         <header
@@ -72,18 +74,14 @@ export function Header() {
                 <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
                     {/* Backend status dot */}
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <span
-                            className="glow-pulse"
-                            style={{
-                                width: "7px",
-                                height: "7px",
-                                borderRadius: "50%",
-                                background: statusColor,
-                                color: statusColor,
-                                display: "block",
-                            }}
-                        />
-                        <span style={{ fontSize: "0.75rem", color: "#475569" }}>{statusLabel}</span>
+                        <span className="glow-pulse" style={{ width: "7px", height: "7px", borderRadius: "50%", background: statusColor(health), display: "block" }} />
+                        <span style={{ fontSize: "0.75rem", color: "#475569" }}>{statusLabel(health, "Backend")}</span>
+                    </div>
+
+                    {/* MinIO status dot */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span className="glow-pulse" style={{ width: "7px", height: "7px", borderRadius: "50%", background: statusColor(minioHealth), display: "block" }} />
+                        <span style={{ fontSize: "0.75rem", color: "#475569" }}>{statusLabel(minioHealth, "MinIO")}</span>
                     </div>
 
                     {/* API Docs link — uses env var, no hardcoded localhost */}

@@ -1,12 +1,17 @@
 // app/api/presign/route.ts
-// Returns a short-lived MinIO presigned PUT URL so the browser can upload
-// directly to MinIO without routing the file bytes through this server.
-// This is the correct approach for large files — zero server-side RAM usage.
+//
+// ⚠️  DEPRECATED — no longer called by the frontend.
+//
+// The presigned URL approach was replaced by /api/minio-upload, a server-side
+// streaming proxy. Presigned URLs embedded the cluster-internal MinIO DNS
+// (resilient-platform-minio-service:9000) which browsers cannot resolve.
+//
+// This file is kept to avoid breaking any external callers or curl scripts
+// that might use it for testing. It is safe to delete when no longer needed.
 import { NextRequest, NextResponse } from "next/server";
 import { getMinioClient, getInputBucket } from "@/lib/minio-client";
 import { ACCEPTED_EXTENSIONS } from "@/lib/constants";
 
-/** Presigned URL validity in seconds (15 minutes). */
 const PRESIGN_TTL_SECONDS = 15 * 60;
 
 export async function GET(req: NextRequest) {
@@ -26,19 +31,9 @@ export async function GET(req: NextRequest) {
 
     try {
         const client = getMinioClient();
-        const bucket = getInputBucket(); // lazy — only called at request time
-
-        // Use the original filename as the object key.
-        // In production you may want to prefix with a UUID to avoid collisions.
-        const objectKey = filename;
-
-        const presignedUrl = await client.presignedPutObject(
-            bucket,
-            objectKey,
-            PRESIGN_TTL_SECONDS
-        );
-
-        return NextResponse.json({ url: presignedUrl, key: objectKey });
+        const bucket = getInputBucket();
+        const presignedUrl = await client.presignedPutObject(bucket, filename, PRESIGN_TTL_SECONDS);
+        return NextResponse.json({ url: presignedUrl, key: filename });
     } catch (err) {
         console.error("[presign] error:", err);
         return NextResponse.json({ error: "Failed to generate upload URL" }, { status: 500 });

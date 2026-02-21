@@ -27,8 +27,9 @@ spec:
               containerPort: 3000
               protocol: TCP
           # All env vars injected at runtime from the shared ConfigMap.
-          # NEXT_PUBLIC_BACKEND_API_URL is constructed via Helm fullname template
-          # so it resolves correctly regardless of release name.
+          # BACKEND_API_URL → read server-side only in the /api/backend proxy route.
+          # S3_* vars → read server-side only in /api/minio-upload, /api/minio-health, /api/result.
+          # No NEXT_PUBLIC_* vars are used — browser only calls relative /api/* paths.
           envFrom:
             - configMapRef:
                 name: {{ include "resilient-platform.fullname" . }}-config

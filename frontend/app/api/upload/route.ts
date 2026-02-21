@@ -1,5 +1,12 @@
-// app/api/upload/route.ts — Receives file from browser, uploads to MinIO input bucket.
-// Kept as a fallback for small files. For large files, use /api/presign instead.
+// app/api/upload/route.ts
+//
+// ⚠️  DEPRECATED — no longer called by the frontend.
+//
+// This multipart upload route was replaced by /api/minio-upload, which accepts
+// a raw PUT body (with real XHR progress events) instead of multipart/form-data.
+// The new route also streams to MinIO without buffering the whole file in RAM.
+//
+// Kept for potential external use or testing. Safe to delete when no longer needed.
 import { NextRequest, NextResponse } from "next/server";
 import { getMinioClient, getInputBucket } from "@/lib/minio-client";
 import { Readable } from "stream";
@@ -22,15 +29,14 @@ export async function POST(req: NextRequest) {
         }
 
         const client = getMinioClient();
-        const bucket = getInputBucket(); // lazy — only called at request time
-        const objectKey = file.name;
+        const bucket = getInputBucket();
         const buffer = Buffer.from(await file.arrayBuffer());
 
-        await client.putObject(bucket, objectKey, Readable.from(buffer), buffer.length, {
+        await client.putObject(bucket, file.name, Readable.from(buffer), buffer.length, {
             "Content-Type": file.type || "application/octet-stream",
         });
 
-        return NextResponse.json({ key: objectKey, bucket });
+        return NextResponse.json({ key: file.name, bucket });
     } catch (err) {
         console.error("[upload] error:", err);
         return NextResponse.json({ error: "Upload failed" }, { status: 500 });
