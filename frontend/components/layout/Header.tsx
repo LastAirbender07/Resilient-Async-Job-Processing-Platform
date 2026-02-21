@@ -5,6 +5,7 @@
 import { Zap, Activity, Github } from "lucide-react";
 import { useBackendHealth } from "@/hooks/useBackendHealth";
 import { useMinioHealth } from "@/hooks/useMinioHealth";
+import { StoragePurge } from "@/components/ui/StoragePurge";
 
 export function Header() {
     const health = useBackendHealth();
@@ -84,9 +85,13 @@ export function Header() {
                         <span style={{ fontSize: "0.75rem", color: "#475569" }}>{statusLabel(minioHealth, "MinIO")}</span>
                     </div>
 
-                    {/* API Docs link — uses env var, no hardcoded localhost */}
+                    {/* Clear MinIO Storage */}
+                    <StoragePurge />
+
+                    {/* API Docs — proxied through /api/backend so it works without
+                        exposing the backend service externally */}
                     <a
-                        href="/backend/docs"
+                        href="/api/backend/docs"
                         target="_blank"
                         rel="noreferrer"
                         style={{
