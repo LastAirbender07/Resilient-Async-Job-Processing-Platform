@@ -1,0 +1,16 @@
+{{- if .Values.istio.enabled }}
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-frontend
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "resilient-platform.name" . }}
+      app.kubernetes.io/component: frontend
+  portLevelMtls:
+    {{ .Values.frontend.service.port }}:
+      mode: PERMISSIVE
+{{- end }}

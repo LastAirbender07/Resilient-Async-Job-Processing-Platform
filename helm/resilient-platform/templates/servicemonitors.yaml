@@ -1,0 +1,58 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-backend-monitor
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+    # Note: Kube-prometheus-stack usually looks for ServiceMonitors across all namespaces, or those with a specific label.
+    release: kube-prometheus-stack # default selector for the helm chart 
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "resilient-platform.name" . }}
+      app.kubernetes.io/component: backend
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-frontend-monitor
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "resilient-platform.name" . }}
+      app.kubernetes.io/component: frontend
+  endpoints:
+  - port: http
+    path: /api/metrics
+    interval: 15s
+---
+# The worker doesn't have a service by default because it's an async background processor.
+# However, ServiceMonitors require a Service to discover the Pods (or we can use PodMonitor).
+# To keep things standardized with existing charts, we can create a simple headless service for the worker,
+# or create a PodMonitor. A PodMonitor is generally cleaner for headless workers.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-worker-monitor
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "resilient-platform.name" . }}
+      app.kubernetes.io/component: worker
+  podMetricsEndpoints:
+  - port: metrics # Need to define this port in the deployment template
+    path: /metrics
+    interval: 15s

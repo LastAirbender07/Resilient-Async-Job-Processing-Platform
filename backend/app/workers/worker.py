@@ -10,9 +10,22 @@ from app.core.storage import StorageClient
 from app.core.settings import settings
 from app.processors.registry import get_processor
 from app.core.logging import setup_logging
+from prometheus_client import start_http_server, Counter, Histogram
 
 logger = setup_logging()
 dispatcher = NotificationDispatcher()
+
+JOB_COUNT = Counter(
+    "worker_jobs_total",
+    "Total jobs processed by worker",
+    ["job_type", "status"]
+)
+
+JOB_DURATION = Histogram(
+    "worker_job_duration_seconds",
+    "Time spent processing a job",
+    ["job_type"]
+)
 
 POLL_INTERVAL_SECONDS = 1
 TMP_DIR = Path("/tmp/jobs")
@@ -81,6 +94,7 @@ def finalize_failure(job, repo: JobRepository, error: Exception):
 
 def handle_job(job, repo: JobRepository, storage: StorageClient):
     logger.info("Handling job", extra={"job_id": str(job.job_id)})
+    start_time = time.time()
 
     try:
         workspace = prepare_workspace(job.job_id)
@@ -88,12 +102,19 @@ def handle_job(job, repo: JobRepository, storage: StorageClient):
         result = execute_processor(job, input_path)
         output_key = persist_output(job, result, storage, workspace)
         finalize_success(job, repo, output_key)
+        JOB_COUNT.labels(job_type=job.job_type, status="success").inc()
 
     except Exception as e:
         finalize_failure(job, repo, e)
+        JOB_COUNT.labels(job_type=job.job_type, status="error").inc()
+
+    finally:
+        duration = time.time() - start_time
+        JOB_DURATION.labels(job_type=job.job_type).observe(duration)
 
 
 def run_worker():
+    start_http_server(8000)
     queue = JobQueue()
     storage = StorageClient()
 

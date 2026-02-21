@@ -26,6 +26,10 @@ spec:
             - python
             - -m
             - app.workers.worker
+          ports:
+            - name: metrics
+              containerPort: 8000
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: {{ include "resilient-platform.fullname" . }}-config

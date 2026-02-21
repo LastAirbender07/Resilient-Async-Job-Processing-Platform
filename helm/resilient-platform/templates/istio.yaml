@@ -1,0 +1,49 @@
+{{- if .Values.istio.enabled }}
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-default
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-gateway
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-vs
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - {{ include "resilient-platform.fullname" . }}-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: {{ include "resilient-platform.fullname" . }}-frontend
+        port:
+          number: {{ .Values.frontend.service.port }}
+{{- end }}

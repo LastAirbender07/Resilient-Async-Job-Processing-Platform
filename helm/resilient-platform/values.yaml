@@ -145,3 +145,6 @@ frontend:
 serviceAccount:
   create: true
   name: service-account
+istio:
+  enabled: true
+
