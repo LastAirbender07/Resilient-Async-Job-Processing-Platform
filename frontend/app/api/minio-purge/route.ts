@@ -10,14 +10,20 @@ import { getMinioClient, getInputBucket, getOutputBucket } from "@/lib/minio-cli
 import { BucketItem } from "minio";
 
 /** Lists all objects in a bucket recursively, then removes them. Returns count deleted. */
-async function purgeBucket(client: Awaited<ReturnType<typeof getMinioClient>>, bucket: string): Promise<number> {
+async function purgeBucket(
+    client: Awaited<ReturnType<typeof getMinioClient>>,
+    bucket: string,
+    excludeNames: string[] = []
+): Promise<number> {
     const objectNames: string[] = [];
 
     // listObjectsV2 is an event-based Node.js stream — wrap in a Promise
     await new Promise<void>((resolve, reject) => {
         const stream = client.listObjectsV2(bucket, "", true);
         stream.on("data", (obj: BucketItem) => {
-            if (obj.name) objectNames.push(obj.name);
+            if (obj.name && !excludeNames.includes(obj.name)) {
+                objectNames.push(obj.name);
+            }
         });
         stream.on("end", resolve);
         stream.on("error", reject);
@@ -40,7 +46,8 @@ export async function DELETE() {
         const outputBucket = getOutputBucket();
 
         const [inputDeleted, outputDeleted] = await Promise.all([
-            purgeBucket(client, inputBucket),
+            // Keep the default test.json created by the helm init container so the UI button still works
+            purgeBucket(client, inputBucket, ["test.json"]),
             purgeBucket(client, outputBucket),
         ]);
 

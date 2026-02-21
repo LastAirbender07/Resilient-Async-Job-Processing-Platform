@@ -17,8 +17,11 @@ export function JobResult({ outputKey }: JobResultProps) {
 
     useEffect(() => {
         fetch(`/api/result?key=${encodeURIComponent(outputKey)}`)
-            .then((r) => {
-                if (!r.ok) throw new Error("Could not load result");
+            .then(async (r) => {
+                if (!r.ok) {
+                    const err = await r.json().catch(() => ({ error: "Could not load result" }));
+                    throw new Error(err.error || "Could not load result");
+                }
                 return r.text();
             })
             .then(setContent)

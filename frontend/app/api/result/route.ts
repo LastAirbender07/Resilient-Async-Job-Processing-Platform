@@ -23,7 +23,13 @@ export async function GET(req: NextRequest) {
             status: 200,
             headers: { "Content-Type": "text/plain; charset=utf-8" },
         });
-    } catch (err) {
+    } catch (err: any) {
+        if (err.code === "NoSuchKey") {
+            return NextResponse.json(
+                { error: "Result file no longer exists (it may have been purged)." },
+                { status: 404 }
+            );
+        }
         console.error("[result] error:", err);
         return NextResponse.json({ error: "Could not fetch result file" }, { status: 500 });
     }
