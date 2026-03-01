@@ -1,209 +1,288 @@
+# Resilient Async Job Processing Platform — Helm Deployment Guide
 
-## 1️⃣ What is already GOOD (No Rework Needed)
-
-From your `kubectl get pods -A`:
-
-### ✅ Istio control plane exists
-
-```
-istio-system
-└── istiod-78549cbb97-fvv54   (Running)
-```
-
-✔ Istio is installed
-✔ Control plane is healthy
-✔ Cluster-wide install (good)
+This guide covers the full Kubernetes deployment of the platform, including Istio mTLS, the
+kube-prometheus-stack (Prometheus + Grafana + Loki), and the application itself.
 
 ---
 
-### ✅ Istio ingress gateway exists
+## Prerequisites
 
-```
-event-system
-└── istio-ingress-54885bb864-nhlgx
-```
-
-This tells me:
-
-* You already deployed an ingress gateway (possibly custom)
-* You’re not stuck with the default-only setup
-
-⚠️ It’s  **Running but 0/1 Ready** , which we’ll come back to.
+| Tool       | Version                | Purpose          |
+| ---------- | ---------------------- | ---------------- |
+| `kubectl`  | ≥ 1.28                 | Cluster access   |
+| `helm`     | ≥ 3.12                 | Chart management |
+| `minikube` | ≥ 1.32 (docker driver) | Local cluster    |
 
 ---
 
-### ✅ You already run real workloads with Istio
-
-Your earlier project (`event-system`) proves:
-
-* Sidecars are injected
-* Traffic flows
-* You’ve survived Istio before 😄
-
-So  **no learning tax here** .
-
----
-
-### ✅ Monitoring stack already present
-
-```
-monitoring/
-├── prometheus
-├── grafana
-├── alertmanager
-```
-
-This is excellent:
-
-* Later, Istio metrics will plug right in
-* We won’t reinstall Prometheus
-
----
-
-## 2️⃣ What MUST Be Verified (Before Helm)
-
-We are **not** verifying everything — only  **hard blockers** .
-
-### 🔍 Verification 1: Sidecar Injection Model
-
-We must know **how Istio injection is enabled** in your cluster.
-
-Run this:
+## 1. Start Minikube
 
 ```bash
-kubectl get ns --show-labels | grep istio
+minikube start --driver=docker --cpus=4 --memory=8192
 ```
-
-We are looking for something like:
-
-```
-event-system   istio-injection=enabled
-```
-
-or
-
-```
-resilient-app  istio.io/rev=default
-```
-
-**Why this matters**
-Helm charts must  *assume one model* :
-
-* Namespace-based injection (classic)
-* Revision-based injection (recommended)
-
-We must not guess.
 
 ---
 
-### 🔍 Verification 2: mTLS Policy (VERY IMPORTANT)
-
-Check if  **STRICT mTLS is already enforced globally** .
-
-Run:
+## 2. Install Istio
 
 ```bash
-kubectl get peerauthentication -A
+# Add the Istio helm repo
+helm repo add istio https://istio-release.storage.googleapis.com/charts
+helm repo update
+
+# Create the istio-system namespace
+kubectl create namespace istio-system
+
+# Install Istio base CRDs
+helm install istio-base istio/base -n istio-system --wait
+
+# Install Istiod (control plane)
+helm install istiod istio/istiod -n istio-system --wait
 ```
 
-If you see something like:
-
-```yaml
-spec:
-  mtls:
-    mode: STRICT
+Verify Istiod is running:
+```bash
+kubectl get pods -n istio-system
 ```
-
-in a  **namespace or mesh-wide** , then:
-
-⚠️ Any new service **without sidecar will BREAK**
-
-This affects:
-
-* Postgres
-* Redis
-* MinIO
-* Init containers (Alembic)
-
-We need to know this  **before writing Helm templates** .
 
 ---
 
-### 🔍 Verification 3: Istio Ingress Health
-
-You have this:
-
-```
-event-system   istio-ingress-54885bb864-nhlgx   0/1 Running
-```
-
-That is  **not OK** , even if traffic works.
-
-Check:
+## 3. Install Prometheus Stack (Prometheus + Grafana + Alertmanager)
 
 ```bash
-kubectl describe pod -n event-system istio-ingress-54885bb864-nhlgx
+# Add the Prometheus community helm repo
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+# Create the monitoring namespace
+kubectl create namespace monitoring
+
+# Install kube-prometheus-stack
+helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  -n monitoring \
+  --set grafana.adminPassword=admin \
+  --wait
 ```
 
-We’re looking for:
+### Install Loki (log aggregation)
 
-* Readiness probe failure
-* Missing certs
-* Port conflicts
-
-**Why this matters**
-We’ll reuse or replace ingress logic for this project.
-
----
-
-### 🔍 Verification 4: Cluster Scope
-
-Confirm context:
+> **Note:** `loki-stack` is deprecated. Use `grafana/loki` in **Monolithic mode** (official recommendation for single-node / local dev).
 
 ```bash
-kubectl config current-context
-kubectl get nodes
+# Add the Grafana helm repo
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
+# If a previous failed loki release exists, remove it first
+helm uninstall loki -n monitoring
+
+# Install Loki - monolithic single replica (uses bundled MinIO for object storage)
+# Values file: docs/helm-deployment/loki-values.yaml
+helm install loki grafana/loki \
+  -n monitoring \
+  -f docs/helm-deployment/loki-values.yaml
+
+# Install Promtail (ships pod logs → Loki gateway)
+# Values file: docs/helm-deployment/promtail-values.yaml
+helm install promtail grafana/promtail \
+  -n monitoring \
+  -f docs/helm-deployment/promtail-values.yaml
 ```
 
-We need to ensure:
+Verify Loki and Promtail are running:
+```bash
+kubectl get pods -n monitoring | grep -E "loki|promtail"
+```
 
-* This is your **dev cluster**
-* Not shared with anything critical
+> **⚠️ Multi-tenancy:** Loki enables multi-tenancy by default. All API calls require the `X-Scope-OrgID` header. The `promtail-values.yaml` sets `tenant_id: resilient-platform` to handle this automatically.
 
-If this is minikube (it looks like it is) → perfect.
-
----
-
-## 3️⃣ Decision Gate: Can We Move to Helm Now?
-
-### ✅ We can move to Helm  **IF** :
-
-* Istio injection method is known
-* mTLS mode is known
-* Ingress health issue is understood (not necessarily fixed yet)
-
-This verification step is **not busywork** — it prevents:
-
-* “Why can’t Postgres connect”
-* “Why do init containers fail”
-* “Why is everything 503”
+Wire Loki into Grafana (one-time setup in UI):
+1. `kubectl port-forward svc/kube-prometheus-stack-grafana 3001:80 -n monitoring`
+2. Open `http://localhost:3001` → **Connections → Data Sources → Add → Loki**
+3. URL: `http://loki-gateway.monitoring.svc.cluster.local`
+4. Under **HTTP Headers**, add: `X-Scope-OrgID` = `resilient-platform`
+5. Click **Save & Test**
 
 ---
 
-## What I Want From You (Next Message)
+## 4. Deploy the Platform
 
-Please paste **only the outputs** of these commands:
+### 4a. Create the namespace with Istio sidecar injection enabled
 
 ```bash
-kubectl get ns --show-labels | grep istio
-kubectl get peerauthentication -A
-kubectl config current-context
+kubectl create namespace resilient-platform
+kubectl label namespace resilient-platform istio-injection=enabled
 ```
 
-Optional (but helpful):
+### 4b. Apply secrets
 
 ```bash
-kubectl describe pod -n event-system istio-ingress-54885bb864-nhlgx
+kubectl apply -f k8s-secrets.yaml -n resilient-platform
+```
+
+> `k8s-secrets.yaml` is at the repo root. Do not commit it to Git.
+
+### 4c. Install the Helm chart
+
+```bash
+helm upgrade --install resilient-platform helm/resilient-platform \
+  -n resilient-platform \
+  --wait
+```
+
+### 4d. Verify all pods are running
+
+```bash
+kubectl get pods -n resilient-platform
+```
+
+Expected output — all pods should show `2/2 Running` (1 app container + 1 Istio sidecar):
+
+```
+NAME                                          READY   STATUS    
+resilient-platform-backend-xxx                2/2     Running   
+resilient-platform-frontend-xxx               2/2     Running   
+resilient-platform-minio-0                    2/2     Running   
+resilient-platform-postgres-0                 2/2     Running   
+resilient-platform-redis-0                    2/2     Running   
+resilient-platform-worker-xxx                 2/2     Running   
 ```
 
 ---
+
+## 5. Access the Frontend
+
+The frontend is exposed as a **NodePort** on port `30080`.
+
+```bash
+# Get the minikube IP
+minikube ip
+```
+
+Then open: `http://<minikube-ip>:30080`
+
+Or use the minikube service helper:
+```bash
+minikube service resilient-platform-frontend -n resilient-platform
+```
+
+---
+
+## 6. Verify Istio mTLS
+
+### Check PeerAuthentication policies
+
+```bash
+kubectl get peerauthentication -n resilient-platform
+```
+
+You should see:
+- `resilient-platform-default` with `MODE: STRICT` — enforces mTLS for all pods in the namespace
+- `resilient-platform-frontend` — exception for the frontend's NodePort (allows plain HTTP from the browser)
+
+### Confirm mTLS traffic with Istio telemetry
+
+**Option A — Check connection metadata via proxy:**
+```bash
+# Pick any backend pod
+BACKEND_POD=$(kubectl get pod -n resilient-platform -l app.kubernetes.io/component=backend -o jsonpath='{.items[0].metadata.name}')
+
+# Query the Envoy proxy's stats for TLS handshakes
+kubectl exec -n resilient-platform $BACKEND_POD -c istio-proxy -- \
+  pilot-agent request GET stats | grep ssl.handshake
+```
+
+A non-zero `ssl.handshake` count confirms mTLS connections are being established.
+
+**Option B — Kiali (recommended visual confirmation):**
+```bash
+# Install Kiali
+helm install kiali-server kiali/kiali-server \
+  -n istio-system \
+  --set auth.strategy=anonymous \
+  --set external_services.prometheus.url="http://kube-prometheus-stack-prometheus.monitoring:9090"
+
+kubectl port-forward svc/kiali 20001:20001 -n istio-system
+```
+Open `http://localhost:20001` → Graph view → enable **Security** badge. Padlock icons on edges = mTLS is active.
+
+**Option C — Check Envoy proxy config directly:**
+```bash
+istioctl proxy-config listener $BACKEND_POD.resilient-platform | grep -i tls
+```
+
+---
+
+## 7. Access Observability UIs
+
+### Grafana
+
+```bash
+kubectl port-forward svc/kube-prometheus-stack-grafana 3001:80 -n monitoring
+```
+Open `http://localhost:3001`
+
+Login credentials:
+- **Username:** `admin`
+- **Password:** retrieve with:
+  ```bash
+  kubectl get secret -n monitoring kube-prometheus-stack-grafana \
+    -o jsonpath="{.data.admin-password}" | base64 -d && echo
+  ```
+
+> **Note:** `--set grafana.adminPassword=admin` is ignored when the secret already exists. Always fetch from the secret.
+
+Pre-built dashboards to explore:
+- **Kubernetes / Compute Resources / Namespace** — CPU/memory per namespace
+- **Istio Service Dashboard** — request rates, error %, latency per service
+- **Loki Logs** — search pod logs directly from Grafana (Explore → Loki → `{namespace="resilient-platform"}`)
+
+### Prometheus
+
+```bash
+kubectl port-forward svc/kube-prometheus-stack-prometheus 9090:9090 -n monitoring
+```
+Open `http://localhost:9090`
+
+Useful queries:
+```promql
+# Backend HTTP request rate
+rate(http_requests_total{namespace="resilient-platform"}[5m])
+
+# Job queue depth (custom metric from worker)
+celery_queue_length
+
+# Istio inter-service latency
+histogram_quantile(0.99, sum(rate(istio_request_duration_milliseconds_bucket{destination_service_namespace="resilient-platform"}[5m])) by (le, destination_service_name))
+```
+
+### Alertmanager
+
+```bash
+kubectl port-forward svc/kube-prometheus-stack-alertmanager 9093:9093 -n monitoring
+```
+Open `http://localhost:9093`
+
+---
+
+## 8. Validate the Full Render (helm template)
+
+To regenerate `helm-output.yaml` after any chart changes:
+
+```bash
+helm lint helm/resilient-platform/
+helm template resilient-platform helm/resilient-platform/ \
+  --namespace resilient-platform > helm/helm-output.yaml
+```
+
+---
+
+## Troubleshooting
+
+| Symptom                                         | Likely Cause                          | Fix                                                                      |
+| ----------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------ |
+| `ImagePullBackOff`                              | Minikube can't reach Docker Hub       | Check DNS: `minikube ssh "nslookup registry-1.docker.io 8.8.8.8"`        |
+| Pod shows `1/2`                                 | Istio sidecar running but app failing | Check `kubectl logs <pod> -c <container>`                                |
+| DB connection error `Name or service not known` | Wrong hostname in secret              | Host must be `resilient-platform-postgres-service` (not `postgres`)      |
+| `Init:Error` on backend                         | Migrate init container failed         | Check `kubectl logs <pod> -c migrate`                                    |
+| Frontend not loading                            | NodePort not accessible               | Use `minikube service resilient-platform-frontend -n resilient-platform` |

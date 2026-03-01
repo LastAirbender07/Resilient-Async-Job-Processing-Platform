@@ -6,3 +6,4 @@ __pycache__
 build
 .vscode
 .env
+k8s-secrets.yaml

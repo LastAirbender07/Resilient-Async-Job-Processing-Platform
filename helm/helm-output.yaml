@@ -47,6 +47,8 @@ data:
   MAILTRAP_INBOX_ID: "4366358"
   MAILTRAP_SENDER_EMAIL: hello@demomailtrap.co
   MAILTRAP_SENDER_NAME: Resilient-Job-Platform
+
+  BACKEND_API_URL: http://resilient-platform-backend:5001
 ---
 # Source: resilient-platform/templates/backend-service.yaml
 apiVersion: v1
@@ -71,6 +73,32 @@ spec:
       protocol: TCP
       port: 5001
       targetPort: 5001
+---
+# Source: resilient-platform/templates/frontend-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: resilient-platform-frontend
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: frontend
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/component: frontend
+  ports:
+    - name: http
+      protocol: TCP
+      port: 3000
+      targetPort: 3000
+      # nodePort 30080 makes the UI reachable at http://<node-ip>:30080
+      nodePort: 30080
 ---
 # Source: resilient-platform/templates/minio-service.yaml
 apiVersion: v1
@@ -183,7 +211,7 @@ spec:
       ## --------------------
       initContainers:
         - name: migrate
-          image: "jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0"
+          image: "jayaraj0781/resilient-async-job-processing-platform-backend:1.0.5"
           imagePullPolicy: IfNotPresent
           command: ["alembic", "upgrade", "head"]
           envFrom:
@@ -197,7 +225,7 @@ spec:
       ## --------------------
       containers:
         - name: backend
-          image: "jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0"
+          image: "jayaraj0781/resilient-async-job-processing-platform-backend:1.0.5"
           imagePullPolicy: IfNotPresent
           command:
             - uv
@@ -239,8 +267,74 @@ spec:
               cpu: "1"
               memory: 512Mi
             requests:
-              cpu: "0.5"
+              cpu: 100m
+              memory: 128Mi
+---
+# Source: resilient-platform/templates/frontend-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resilient-platform-frontend
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilient-platform
+      app.kubernetes.io/instance: resilient-platform
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: resilient-platform
+        app.kubernetes.io/instance: resilient-platform
+        app.kubernetes.io/component: frontend
+    spec:
+      serviceAccountName: resilient-platform-service-account
+      containers:
+        - name: frontend
+          image: "jayaraj0781/resilient-async-job-processing-platform-frontend:1.0.9"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          # All env vars injected at runtime from the shared ConfigMap.
+          # BACKEND_API_URL → read server-side only in the /api/backend proxy route.
+          # S3_* vars → read server-side only in /api/minio-upload, /api/minio-health, /api/result.
+          # No NEXT_PUBLIC_* vars are used — browser only calls relative /api/* paths.
+          envFrom:
+            - configMapRef:
+                name: resilient-platform-config
+          resources:
+            limits:
+              cpu: 500m
               memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
 ---
 # Source: resilient-platform/templates/worker-deployment.yaml
 apiVersion: apps/v1
@@ -274,12 +368,16 @@ spec:
       serviceAccountName: resilient-platform-service-account
       containers:
         - name: worker
-          image: "jayaraj0781/resilient-async-job-processing-platform-backend:1.0.0"
+          image: "jayaraj0781/resilient-async-job-processing-platform-backend:1.0.5"
           imagePullPolicy: IfNotPresent
           command:
             - python
             - -m
             - app.workers.worker
+          ports:
+            - name: metrics
+              containerPort: 8000
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: resilient-platform-config
@@ -292,8 +390,8 @@ spec:
               cpu: "1"
               memory: 512Mi
             requests:
-              cpu: "0.5"
-              memory: 256Mi
+              cpu: 100m
+              memory: 128Mi
 ---
 # Source: resilient-platform/templates/minio-statefulset.yaml
 apiVersion: apps/v1
@@ -360,8 +458,8 @@ spec:
               cpu: "1"
               memory: 512Mi
             requests:
-              cpu: "0.5"
-              memory: 256Mi
+              cpu: 100m
+              memory: 128Mi
           volumeMounts:
             - name: resilient-platform-minio-data
               mountPath: /data
@@ -440,8 +538,8 @@ spec:
               cpu: "1"
               memory: 512Mi
             requests:
-              cpu: "0.5"
-              memory: 256Mi
+              cpu: 100m
+              memory: 128Mi
           volumeMounts:
             - name: resilient-platform-postgres-data
               mountPath: /var/lib/postgresql/data
@@ -513,8 +611,8 @@ spec:
               cpu: "1"
               memory: 512Mi
             requests:
-              cpu: "0.5"
-              memory: 256Mi
+              cpu: 100m
+              memory: 128Mi
 ---
 # Source: resilient-platform/templates/minio-init-job.yaml
 apiVersion: batch/v1
@@ -530,11 +628,10 @@ metadata:
     app.kubernetes.io/component: minio-init
 spec:
   backoffLimit: 3
+  ttlSecondsAfterFinished: 300
   template:
     spec:
       restartPolicy: OnFailure
-      ttlSecondsAfterFinished: 300
-      backoffLimit: 3
       containers:
         - name: minio-init
           image: minio/mc:latest
@@ -557,3 +654,160 @@ spec:
               mc cp /tmp/test.json local/resilient-async-job-processing-inputs/test.json
 
               echo "MinIO initialization complete"
+---
+# Source: resilient-platform/templates/istio.yaml
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: resilient-platform-gateway
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+---
+# Source: resilient-platform/templates/frontend-peerauth.yaml
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: resilient-platform-frontend
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilient-platform
+      app.kubernetes.io/component: frontend
+  portLevelMtls:
+    3000:
+      mode: PERMISSIVE
+---
+# Source: resilient-platform/templates/istio.yaml
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: resilient-platform-default
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  mtls:
+    mode: STRICT
+---
+# Source: resilient-platform/templates/servicemonitors.yaml
+# The worker doesn't have a service by default because it's an async background processor.
+# However, ServiceMonitors require a Service to discover the Pods (or we can use PodMonitor).
+# To keep things standardized with existing charts, we can create a simple headless service for the worker,
+# or create a PodMonitor. A PodMonitor is generally cleaner for headless workers.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: resilient-platform-worker-monitor
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: worker
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilient-platform
+      app.kubernetes.io/component: worker
+  podMetricsEndpoints:
+  - port: metrics # Need to define this port in the deployment template
+    path: /metrics
+    interval: 15s
+---
+# Source: resilient-platform/templates/servicemonitors.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: resilient-platform-backend-monitor
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: backend
+    # Note: Kube-prometheus-stack usually looks for ServiceMonitors across all namespaces, or those with a specific label.
+    release: kube-prometheus-stack # default selector for the helm chart 
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilient-platform
+      app.kubernetes.io/component: backend
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s
+---
+# Source: resilient-platform/templates/servicemonitors.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: resilient-platform-frontend-monitor
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: frontend
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilient-platform
+      app.kubernetes.io/component: frontend
+  endpoints:
+  - port: http
+    path: /api/metrics
+    interval: 15s
+---
+# Source: resilient-platform/templates/istio.yaml
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: resilient-platform-vs
+  labels:
+    helm.sh/chart: resilient-platform-0.1.0
+    app.kubernetes.io/name: resilient-platform
+    app.kubernetes.io/instance: resilient-platform
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - resilient-platform-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: resilient-platform-frontend
+        port:
+          number: 3000

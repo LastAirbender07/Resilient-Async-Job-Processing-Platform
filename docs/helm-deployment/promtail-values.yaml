@@ -1,0 +1,8 @@
+# Promtail values - ships logs to Loki gateway with tenant header
+# Deploy with:
+#   helm install promtail grafana/promtail -n monitoring -f docs/helm-deployment/promtail-values.yaml
+
+config:
+  clients:
+    - url: http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push
+      tenant_id: resilient-platform
