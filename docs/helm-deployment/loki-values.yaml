@@ -34,6 +34,22 @@ deploymentMode: SingleBinary
 singleBinary:
   replicas: 1
 
+# Disable/downsize Memcached caches — production defaults are too large for Minikube
+# chunksCache defaults to ~9.8GB memory request which exceeds Minikube's allocatable memory
+chunksCache:
+  enabled: false   # Not needed for local dev; disabling prevents FailedScheduling
+
+resultsCache:
+  enabled: true
+  # Override production defaults (default is also very large)
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
 # Zero out all other deployment mode replicas
 backend:
   replicas: 0
