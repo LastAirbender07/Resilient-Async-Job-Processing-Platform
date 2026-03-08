@@ -13,7 +13,7 @@ Browser
 Frontend (Next.js)             ← NodePort 30080 / localhost tunnel
   │  PUT /api/minio-upload      ← streams file to MinIO (server-side proxy)
   │  GET /api/result            ← streams output from MinIO
-  │  POST/GET /api/backend/*   ← catch-all proxy to Backend API
+  │  POST/GET /api/backend/*    ← catch-all proxy to Backend API
   │
   ▼
 Backend API (FastAPI :5001)
@@ -22,9 +22,9 @@ Backend API (FastAPI :5001)
   │  POST /jobs/{id}/retry      ← re-queue failed jobs
   │  GET /metrics               ← Prometheus scrape endpoint
   │
-  ├──► PostgreSQL               ← job state persistence
-  ├──► Redis                    ← job queue (BRPOP/RPUSH)
-  └──► MinIO                   ← input/output file storage (S3-compatible)
+  ├──► PostgreSQL               ← (Sidecar: postgres-exporter :9187)
+  ├──► Redis                    ← (Sidecar: redis-exporter :9121)
+  └──► MinIO                    ← (Metrics: /minio/v2/metrics/cluster :9000)
 
 Worker (Python :8000 metrics)
   │  Polls Redis queue
@@ -34,12 +34,12 @@ Worker (Python :8000 metrics)
 
 ─────────────────────────────────────────────────────────────────
 Kubernetes Namespace: resilient-platform
-  Istio mTLS: STRICT (all pod-to-pod traffic encrypted)
-  Exception: frontend port 3000 PERMISSIVE (allows NodePort browser traffic)
+  Istio mTLS: STRICT (All business traffic encrypted)
+  Exceptions: Port-level PERMISSIVE (Allows Prometheus scraping of :5001, :8000, :15090, :9000, :9187, :9121)
 
 Monitoring Namespace: monitoring
-  Prometheus + Grafana + Alertmanager (kube-prometheus-stack)
-  Loki + Promtail (log aggregation)
+  Prometheus + Grafana + Alertmanager (Metrics & Dashboards)
+  Loki + Promtail (Log Aggregation with Multi-tenancy)
 ```
 
 ---

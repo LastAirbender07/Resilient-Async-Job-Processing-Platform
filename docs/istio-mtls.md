@@ -108,27 +108,29 @@ spec:
           number: 3000
 ```
 
-#### Option B: The NodePort Exception (Port-Level PERMISSIVE)
-If you are developing locally without an Ingress controller (like in our Minikube setup) and want to hit the `NodePort` directly, you must configure an exception to the `STRICT` rule for that specific port.
+#### Option B: Port-Level PERMISSIVE (The "Metrics Scraper" Pattern)
+If you need specific services (like Prometheus) to hit internal ports over plain HTTP while the rest of the traffic remains STRICT mTLS, you can configure port-level exceptions.
 
 **The Configuration:**
 ```yaml
 apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
 metadata:
-  name: frontend-exception
+  name: metrics-exception
   namespace: <your-namespace>
 spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/component: frontend # Target ONLY the frontend pods
+  # Omit selector to apply to ALL pods in the namespace
   portLevelMtls:
-    3000: # The container port
+    5001:  # Backend metrics
+      mode: PERMISSIVE
+    8000:  # Worker metrics
+      mode: PERMISSIVE
+    15090: # Istio sidecar stats
       mode: PERMISSIVE
 ```
 
 **Why it's necessary:**
-This keeps the entire namespace in `STRICT` mode, but tells the Envoy sidecar on the `frontend` pod to accept plain text traffic specifically on port `3000`. This allows the NodePort to bypass the mTLS requirement, but still encrypts everything the frontend sends to the backend.
+Prometheus usually scrapes over plain HTTP. In a STRICT mTLS namespace, Envoy will reset the connection. By setting these specific ports to `PERMISSIVE`, you allow the Prometheus scraper to succeed while ensuring all "business" traffic (API calls, DB queries) between pods is still fully encrypted.
 
 ---
 

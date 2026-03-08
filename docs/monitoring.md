@@ -79,12 +79,16 @@ Open `http://localhost:9093`
 
 **Recommended imported dashboards (Grafana.com IDs):**
 
-| Dashboard                                  | Grafana ID | What to look at                |
-| ------------------------------------------ | ---------- | ------------------------------ |
-| Kubernetes / Compute Resources / Namespace | **315**    | CPU + memory per component     |
-| Kubernetes / Compute Resources / Pod       | **12740**  | Per-pod resource usage         |
-| Istio Service Dashboard                    | **7630**   | Request rate, error %, latency |
-| Istio Workload Dashboard                   | **7636**   | Per-workload traffic           |
+| Dashboard                                  | Grafana ID | What to look at                      |
+| ------------------------------------------ | ---------- | ------------------------------------ |
+| Kubernetes / Compute Resources / Namespace | **315**    | CPU + memory per component           |
+| Kubernetes / Compute Resources / Pod       | **12740**  | Per-pod resource usage               |
+| Istio Service Dashboard                    | **7630**   | Request rate, error %, latency       |
+| Istio Workload Dashboard                   | **7636**   | Per-workload traffic                 |
+| **PostgreSQL Exporter**                    | **9628**   | Slow queries, DB size, connections   |
+| **Redis Dashboard for Prometheus**         | **11835**  | Cache hit rate, keys, memory         |
+| **MinIO Dashboard**                        | **13502**  | S3 throughput, latency, bucket usage |
+| **Loki Stack Monitoring**                  | **14055**  | Promtail/Loki health (req resources) |
 
 **"No number data" error in panels?** This is not a panel bug — it means the query returned no results. Either (a) the data source variable isn't set correctly, (b) the namespace variable doesn't match, or (c) the Prometheus target for that component is DOWN. Check Prometheus → Status → Targets.
 
@@ -102,7 +106,13 @@ DOWN   connection reset by peer
 **Root cause:** The `resilient-platform` namespace has a STRICT mTLS PeerAuthentication. Prometheus scrapes over plain HTTP. The Istio sidecar rejects plaintext connections with a TCP RST, causing "connection reset by peer". The frontend was UP because it already had its own PeerAuthentication exception.
 
 **Fix (applied in `helm/resilient-platform/templates/servicemonitors.yaml`):**  
-Added two port-level `PERMISSIVE` PeerAuthentication policies — one for the backend metrics port (5001) and one for the worker metrics port (8000). This allows Prometheus to scrape those specific ports over plain HTTP while all other traffic in the namespace remains STRICT mTLS.
+Added a consolidated `PeerAuthentication` policy with `portLevelMtls` exceptions. This allows Prometheus to scrape the following ports over plain HTTP while keeping everything else STRICT:
+- **Backend**: 5001
+- **Worker**: 8000
+- **Istio Sidecar**: 15090
+- **MinIO**: 9000
+- **Postgres Exporter**: 9187
+- **Redis Exporter**: 9121
 
 **To verify targets are UP at any time:**
 ```bash
@@ -119,7 +129,21 @@ Expected output:
 UP  resilient-platform-backend
 UP  resilient-platform/resilient-platform-worker-monitor
 UP  resilient-platform-frontend
+UP  resilient-platform/resilient-platform-minio-monitor
+UP  resilient-platform/resilient-platform-postgres-monitor
+UP  resilient-platform/resilient-platform-redis-monitor
 ```
+
+---
+
+## Port Naming Convention
+
+To allow Prometheus to find the correct ports on Services, we use a dynamic naming convention in Helm:
+`{{ fullname }}-{{ host }}-\{metrics|api\}`
+
+Example: `resilient-platform-postgres-metrics`
+
+Always use the **Port Name** (not the number) in your `ServiceMonitor` configurations to ensure they survive infrastructure changes.
 
 ---
 
