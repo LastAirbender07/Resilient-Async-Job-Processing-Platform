@@ -23,6 +23,28 @@ export const PROGRESS_STEPS: JobStatus[] = ["QUEUED", "PROCESSING", "COMPLETED"]
 /** Accepted file extensions for job input files. */
 export const ACCEPTED_EXTENSIONS = ["json", "csv"] as const;
 
-/** Max file size accepted by the /api/minio-upload server-side proxy (500 MB).
- *  Files larger than this would need chunked/multipart upload (future work). */
-export const MAX_SINGLE_PUT_BYTES = 500 * 1024 * 1024;
+/**
+ * Files at or below this size are uploaded via a single PUT to /api/minio-upload.
+ * Files above this size are uploaded via the multipart upload protocol
+ * (/api/multipart/initiate → /api/multipart/part × N → /api/multipart/complete).
+ *
+ * 500 MB is a sensible threshold: single PUTs are simpler and faster for small
+ * files, while multipart gives chunk-level retry and progress for large files.
+ */
+export const MAX_SINGLE_PUT_BYTES = 500 * 1024 * 1024; // 500 MB
+
+/**
+ * Size of each chunk in a multipart upload.
+ * MinIO requires parts to be ≥5 MB (except the last). 64 MB is a practical
+ * choice: large enough to be efficient on fast networks, small enough that a
+ * retry of a failed chunk is not expensive.
+ */
+export const MULTIPART_CHUNK_SIZE = 64 * 1024 * 1024; // 64 MB
+
+/**
+ * Hard upper limit on file size — enforced client-side before the upload starts.
+ * MinIO's single-object PUT limit is 5 GB. Multipart uploads support up to 5 TB
+ * (10,000 parts × 500 MB each), but we keep the guard at 5 GB for simplicity.
+ * Raise this constant if you need to test with files larger than 5 GB.
+ */
+export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
