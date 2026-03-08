@@ -154,17 +154,20 @@ resilient-platform-worker-xxx                 2/2     Running
 
 The frontend is exposed as a **NodePort** on port `30080`.
 
-```bash
-# Get the minikube IP
-minikube ip
-```
+> **⚠️ macOS + Docker driver:** On macOS, Minikube uses a Docker network (`192.168.49.x`) that is **not directly routable** from the host. `curl http://192.168.49.2:30080` will hang. You **must** use the `minikube service` tunnel instead.
 
-Then open: `http://<minikube-ip>:30080`
-
-Or use the minikube service helper:
 ```bash
+# This creates a localhost tunnel and opens the URL automatically
 minikube service resilient-platform-frontend -n resilient-platform
 ```
+
+To get just the URL (without auto-opening the browser):
+```bash
+minikube service resilient-platform-frontend -n resilient-platform --url
+# → http://127.0.0.1:<some-port>
+```
+
+> **Note:** Keep the terminal running — the tunnel stays alive only while the command runs. Open the printed `http://127.0.0.1:...` URL in your browser.
 
 ---
 

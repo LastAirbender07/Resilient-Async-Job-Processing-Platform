@@ -1,294 +1,133 @@
-### Minimum required states:
+# Documentation — Index
 
-- CREATED
-- QUEUED
-- PROCESSING
-- RETRYING
-- FAILED
-- COMPLETED
-- DEAD
+This folder contains all design and operational documentation for the **Resilient Async Job Processing Platform**. Use this as your starting point.
 
-For each state, define:
+---
 
-- Who sets it
-- When it transitions
-- Whether it is terminal
-
-### Failure Guarantees
-
-- Delivery guarantee: At-least-once
-- Job idempotency: Required
-- Duplicate processing: Allowed
-- Job loss: Not allowed
-
-This justifies:
-
-- Redis/Kafka choice
-- Worker retry logic
-- DLQ existence
-
-### Repo Structure:
+## Platform Architecture (Quick Reference)
 
 ```
-resilient-async-platform/
-├── backend/
-│   ├── app/
-│   ├── tests/
-│   └── Dockerfile
-├── worker/
-│   ├── app/
-│   ├── tests/
-│   └── Dockerfile
-├── frontend/
-│   ├── src/
-│   └── Dockerfile
-├── infra/
-│   ├── docker-compose/
-│   ├── helm/
-│   ├── istio/
-│   └── keda/
-├── observability/
-│   ├── prometheus/
-│   ├── grafana/
-│   └── loki/
-├── .github/workflows/
-├── README.md
-└── docs/
+Browser
+  │
+  ▼
+Frontend (Next.js)             ← NodePort 30080 / localhost tunnel
+  │  PUT /api/minio-upload      ← streams file to MinIO (server-side proxy)
+  │  GET /api/result            ← streams output from MinIO
+  │  POST/GET /api/backend/*   ← catch-all proxy to Backend API
+  │
+  ▼
+Backend API (FastAPI :5001)
+  │  POST /jobs                 ← creates job, validates file exists in MinIO
+  │  GET /jobs, GET /jobs/{id}  ← read job state
+  │  POST /jobs/{id}/retry      ← re-queue failed jobs
+  │  GET /metrics               ← Prometheus scrape endpoint
+  │
+  ├──► PostgreSQL               ← job state persistence
+  ├──► Redis                    ← job queue (BRPOP/RPUSH)
+  └──► MinIO                   ← input/output file storage (S3-compatible)
 
+Worker (Python :8000 metrics)
+  │  Polls Redis queue
+  ├──► Downloads input from MinIO
+  ├──► Runs processor (CSV/JSON)
+  └──► Uploads result to MinIO → marks job COMPLETED → sends notification email
+
+─────────────────────────────────────────────────────────────────
+Kubernetes Namespace: resilient-platform
+  Istio mTLS: STRICT (all pod-to-pod traffic encrypted)
+  Exception: frontend port 3000 PERMISSIVE (allows NodePort browser traffic)
+
+Monitoring Namespace: monitoring
+  Prometheus + Grafana + Alertmanager (kube-prometheus-stack)
+  Loki + Promtail (log aggregation)
 ```
 
-### Goal:
+---
 
-Upload → Job created → Worker processes → Job completed → UI updates
+## Documentation Map
 
-### Order:
+### Frontend
 
-- Job persistence
-- Worker crash recovery
-- Retries + DLQ
-- WebSockets/SSE
-- Rate limiting
-- KEDA autoscaling
-- Istio mTLS
-- Observability depth
+| File                                        | Contents                                               |
+| ------------------------------------------- | ------------------------------------------------------ |
+| [overview.md](frontend/overview.md)         | What the frontend does, features, page structure       |
+| [architecture.md](frontend/architecture.md) | Directory structure, hooks, data flow, API routes      |
+| [development.md](frontend/development.md)   | Local setup, env vars, how to add job types/API routes |
+| [deployment.md](frontend/deployment.md)     | Helm config, runtime env vars, CI/CD, health probes    |
+| [concerns.md](frontend/concerns.md)         | Known limitations, trade-offs, future work             |
 
-Start with:
+### Backend
 
-Docker Compose with Single worker - Local Redis - Local MinIO
+| File                                                       | Contents                                                                       |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [architecture.md](backend/architecture.md)                 | Directory structure, request lifecycle, worker loop, processor pattern         |
+| [api-contracts.md](backend/api-contracts.md)               | All REST endpoints, request/response schemas, error codes                      |
+| [job-model.md](backend/job-model.md)                       | Job fields, state machine, retry logic, notification schema                    |
+| [minio-discussions.md](backend/minio-discussions.md)       | MinIO integration: why server-side proxy, object key scheme, StorageClient API |
+| [notification-service.md](backend/notification-service.md) | Email notifications via Mailtrap, architecture, config                         |
+| [job-suggestions.md](backend/job-suggestions.md)           | How to add a new job type (step-by-step guide)                                 |
+| [apply-alembic.md](backend/apply-alembic.md)               | How to run Alembic migrations locally                                          |
 
-Only when behavior is correct:
+### Helm Deployment
 
-Move to K8s, Add Helm, Add Istio, Add KEDA
+| File                                                         | Contents                                                      |
+| ------------------------------------------------------------ | ------------------------------------------------------------- |
+| [README.md](helm-deployment/README.md)                       | Full K8s deployment guide (Istio → Prometheus → App → Verify) |
+| [secret-management.md](helm-deployment/secret-management.md) | How secrets are managed (out-of-band, not in Git)             |
+| [istio-plan.md](helm-deployment/istio-plan.md)               | Istio integration planning notes                              |
+| [plan.md](helm-deployment/plan.md)                           | Helm chart development plan                                   |
+| [loki-values.yaml](helm-deployment/loki-values.yaml)         | Loki Helm values (monolithic mode)                            |
+| [promtail-values.yaml](helm-deployment/promtail-values.yaml) | Promtail Helm values                                          |
+
+### Istio & Networking
+
+| File                           | Contents                                               |
+| ------------------------------ | ------------------------------------------------------ |
+| [istio-mtls.md](istio-mtls.md) | Istio concepts, step-by-step setup, how to verify mTLS |
+
+### Monitoring & Observability
+
+| File                           | Contents                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| [monitoring.md](monitoring.md) | Prometheus metrics, Grafana dashboards, Loki log queries, PromQL/LogQL examples |
+
+### MinIO
+
+| File                                                   | Contents                                                   |
+| ------------------------------------------------------ | ---------------------------------------------------------- |
+| [minIO/integration-plan.md](minIO/integration-plan.md) | Original MinIO integration planning (historical reference) |
+
+---
+
+## Key Design Decisions (Quick Reference)
+
+| Decision         | What was chosen                                   | Why                                                                      |
+| ---------------- | ------------------------------------------------- | ------------------------------------------------------------------------ |
+| Upload mechanism | Server-side streaming proxy (`/api/minio-upload`) | Browser can't resolve MinIO cluster DNS                                  |
+| Job queue        | Redis BRPOP/RPUSH                                 | Simple, zero additional dependency (Redis already used for cache)        |
+| DB migrations    | Alembic                                           | Reliable schema versioning; runs at pod startup via `entrypoint.sh`      |
+| State            | PostgreSQL JSONB for `context`/`notifications`    | Avoid extra tables; job is the aggregate root                            |
+| Notifications    | Mailtrap sandbox                                  | Safe for dev; real SMTP avoided; easily swappable provider               |
+| Observability    | kube-prometheus-stack + Loki                      | Standard OSS stack; pre-integrated with Kubernetes                       |
+| mTLS             | Istio STRICT mode + frontend PERMISSIVE exception | All pod-to-pod traffic encrypted; NodePort still accessible from browser |
+| Secrets          | Out-of-band `k8s-secrets.yaml` (gitignored)       | Secrets never enter Git history                                          |
+
+---
+
+## End-to-End Data Flow
 
 ```
-Frontend
-   |
-   | 1️⃣ Upload file (streaming)
-   v
-Object Storage (MinIO)
-   |
-   | 2️⃣ Returns object key
-   v
-Backend API
-   |
-   | 3️⃣ Create job with object reference
-   v
-Job Queue
-   |
-   v
-Worker
-   |
-   | 4️⃣ Reads file from MinIO
-   v
-Processing
-
+1. User selects file in browser
+2. Drag-drop → DropZone → useFileUpload.validateAndSetFile()
+3. User clicks Submit
+4. XHR PUT /api/minio-upload?filename=data.csv
+     → Next.js streams body → MinIO input bucket
+5. lib/api.ts createJob({ job_type, input_file_path: "data.csv" })
+     → POST /jobs → backend validates file exists → INSERT job → RPUSH Redis
+6. Frontend receives job_id → starts useJobPoller (polls every 2s)
+7. Worker BRPOP Redis → claims job (PROCESSING) → downloads input
+     → runs processor → uploads output.json → marks COMPLETED
+     → sends email notification (if configured)
+8. useJobPoller sees COMPLETED → JobResult fetches GET /api/result?key=outputs/...
+     → Next.js streams MinIO output → displays result in browser
 ```
-
-## Large File Upload Strategy
-
-### Problem Statement
-
-The platform needs to support **large file uploads** (e.g., CSVs, videos) initiated from a frontend application.
-
-A naive approach—sending files as Base64 within JSON payloads or buffering entire files in memory—introduces serious risks:
-
-* Excessive memory consumption
-* Increased request latency
-* Backend thread blocking
-* Poor scalability and failure recovery
-
-This document explains the  **chosen upload strategy** , the  **alternatives considered** , and  **why this approach is resilient and production-safe** .
-
----
-
-## Key Design Principles
-
-* **Never load entire files into memory**
-* **Never Base64-encode large files**
-* **Never include large files inside JSON**
-* **Use streaming and backpressure instead of buffering**
-* **Decouple file upload from job creation**
-
----
-
-## Final Upload Flow (Chosen Approach)
-
-### High-Level Flow
-
-<pre class="overflow-visible! px-0!" data-start="1171" data-end="1341"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(--spacing(9)+var(--header-height))] @w-xl/main:top-9"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre!"><span><span>Frontend
-   │
-   │  multipart/form-data (streamed)
-   ▼
-Backend API (FastAPI)
-   │
-   │  streaming upload (</span><span>no</span><span> buffering)
-   ▼
-MinIO (S3-compatible </span><span>object</span><span></span><span>storage</span><span>)
-</span></span></code></div></div></pre>
-
-### Sequence
-
-1. The frontend uploads the file using `multipart/form-data`
-2. The backend **streams** the file directly to MinIO
-3. On successful upload, MinIO returns an `object_key`
-4. The frontend then calls `POST /jobs`, passing the `object_key`
-5. The job is queued for asynchronous processing
-
----
-
-## Why Streaming Uploads Do Not Cause Lag
-
-### What Actually Happens Under the Hood
-
-* The browser sends the file in **chunks**
-* FastAPI reads the stream incrementally
-* The MinIO client uploads chunks using **multipart upload**
-* TCP backpressure naturally throttles flow when needed
-* The backend never holds the full file in memory
-
-**Result:**
-
-* Flat memory usage
-* No event loop blocking
-* Predictable performance under load
-
----
-
-## Backend Implementation Concept
-
-FastAPI provides `UploadFile`, which is designed specifically for large file handling.
-
-Key properties:
-
-* Small files → memory
-* Large files → disk (spooled)
-* File object can be streamed directly
-
-### Streaming to MinIO (Conceptual)
-
-<pre class="overflow-visible! px-0!" data-start="2356" data-end="2575"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(--spacing(9)+var(--header-height))] @w-xl/main:top-9"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre! language-python"><span><span>minio_client.put_object(
-    bucket_name=</span><span>"jobs"</span><span>,
-    object_name=object_key,
-    data=file.file,        </span><span># streamed</span><span>
-    length=-</span><span>1</span><span>,             </span><span># unknown size</span><span>
-    part_size=</span><span>10</span><span> * </span><span>1024</span><span> * </span><span>1024</span><span></span><span># 10 MB chunks</span><span>
-)
-</span></span></code></div></div></pre>
-
-This ensures:
-
-* Multipart uploads
-* No buffering
-* Safe handling of large files
-
----
-
-## Why Job Creation Happens *After* Upload
-
-Creating a job **before** upload introduces failure states:
-
-* Orphaned jobs if upload fails
-* Complex cleanup logic
-* Retry ambiguity
-
-### Chosen Approach
-
-* Upload file first
-* Create job only after successful upload
-
-This ensures:
-
-* Clean system state
-* Simple idempotency
-* No zombie jobs
-
----
-
-## Alternative Considered: Direct Browser → MinIO Uploads
-
-### Pre-Signed URL Approach
-
-<pre class="overflow-visible! px-0!" data-start="3094" data-end="3213"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(--spacing(9)+var(--header-height))] @w-xl/main:top-9"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre!"><span><span>Frontend ───────────► MinIO
-   ▲                      |
-   |   pre-</span><span>signed</span><span> URL     |
-   └──── Backend ─────────┘
-</span></span></code></div></div></pre>
-
-**Pros**
-
-* Zero backend load
-* Infinite scalability
-* Ideal for very large files
-
-**Cons**
-
-* More complex client logic
-* Requires CORS configuration
-* Harder to debug initially
-
-**Decision**
-
-* Not implemented initially
-* Documented as a future scalability enhancement
-
----
-
-## Failure Handling & Reliability
-
-| Scenario          | Handling                           |
-| ----------------- | ---------------------------------- |
-| Upload failure    | No job created                     |
-| Client disconnect | Upload aborted                     |
-| Partial upload    | MinIO multipart cleanup            |
-| Retry             | Handled at client or storage level |
-| Backend crash     | No file corruption                 |
-
----
-
-## Guarantees Achieved
-
-* **No job loss**
-* **At-least-once processing**
-* **Idempotent job creation**
-* **Backend remains responsive under load**
-
----
-
-## Summary
-
-This upload strategy:
-
-* Aligns with industry-standard patterns (S3, GCS, YouTube-like systems)
-* Avoids memory and performance pitfalls
-* Cleanly separates concerns between upload and processing
-* Scales naturally without architectural changes
-
----
-
-## Future Enhancements
-
-* Pre-signed upload URLs
-* Upload resume support
-* Client-side chunk retries
-* Upload progress events
-

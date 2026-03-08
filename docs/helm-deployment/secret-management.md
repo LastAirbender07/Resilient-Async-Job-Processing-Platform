@@ -1,141 +1,124 @@
-Current flow:
+# Helm Deployment — Secret Management
 
-<pre class="overflow-visible! px-0!" data-start="608" data-end="711"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(var(--sticky-padding-top)+9*var(--spacing))]"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre!"><span><span>values.yaml (tracked </span><span>in</span><span> Git)
-   ↓
-templates/secret.yaml
-   ↓
-Kubernetes Secret
-   ↓
-Application
-</span></span></code></div></div></pre>
-
-Problem:
-
-* `values.yaml` contains **plaintext secrets**
-* Git history becomes a permanent leak
-* Rotation is painful
-* Violates security baselines (SOC2, ISO, etc.)
-
-So what  *do real systems do* ?
+> **Status: Implemented.** Secrets are created out-of-band via `kubectl` and referenced by name in the Helm chart — secrets are never stored in Git.
 
 ---
 
-# The Industry-Standard Model (This Is the Mental Shift)
+## The Core Principle
 
-## Helm should  **reference secrets** , not **own secrets**
+> **Helm renders infrastructure. Helm does not own secrets.**
 
-Helm is:
+The pattern used here:
 
-* a **renderer**
-* a **wiring tool**
+```
+Git repo
+  └── helm/resilient-platform/values.yaml  ← secret names only, no values
+  └── k8s-secrets.yaml                     ← NOT committed to Git (.gitignore'd)
 
-Helm is  **not** :
-
-* a secret manager
-
----
-
-# The Correct Architecture (Used Everywhere)
-
-<pre class="overflow-visible! px-0!" data-start="1167" data-end="1447"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(var(--sticky-padding-top)+9*var(--spacing))]"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre!"><span><span>Git repo (safe)
-│
-├── </span><span>values</span><span>.yaml               ← </span><span>NO</span><span> secrets
-├── templates/
-│   └── secret.yaml           ← OPTIONAL </span><span>or</span><span></span><span>NONE</span><span>
-│
-└── Runtime Secret Source
-    ├── kubectl apply secret.yaml
-    ├── sealed-secrets
-    ├── </span><span>external</span><span>-secrets
-    ├── Vault
-    └── CI/CD injection
-</span></span></code></div></div></pre>
+Cluster
+  └── kubectl apply -f k8s-secrets.yaml    ← creates the actual Secret objects
+  └── helm upgrade ...                      ← chart references secrets by name
+```
 
 ---
 
-# The Simplest Correct Fix (Start Here)
+## What Secrets Exist
 
-## 1️⃣ Remove secrets from `values.yaml`
+| Secret Name                 | Namespace            | Contains                        |
+| --------------------------- | -------------------- | ------------------------------- |
+| `resilient-platform-secret` | `resilient-platform` | All app credentials (see below) |
 
-### ❌ What must go
-
-<pre class="overflow-visible! px-0!" data-start="1556" data-end="1705"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(var(--sticky-padding-top)+9*var(--spacing))]"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre! language-yaml"><span><span>postgres:</span><span>
-  </span><span>user:</span><span></span><span>postgres</span><span>
-  </span><span>password:</span><span></span><span>postgres</span><span>
-
-</span><span>minio:</span><span>
-  </span><span>accessKey:</span><span></span><span>minioadmin</span><span>
-  </span><span>secretKey:</span><span></span><span>minioadmin</span><span>
-
-</span><span>mailtrap:</span><span>
-  </span><span>apiKey:</span><span></span><span>"xxxxxxxxxx"</span><span>
-</span></span></code></div></div></pre>
-
-### ✅ Replace with references
-
-<pre class="overflow-visible! px-0!" data-start="1737" data-end="1894"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(var(--sticky-padding-top)+9*var(--spacing))]"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre! language-yaml"><span><span>postgres:</span><span>
-  </span><span>secretName:</span><span></span><span>resilient-postgres-secret</span><span>
-
-</span><span>minio:</span><span>
-  </span><span>secretName:</span><span></span><span>resilient-minio-secret</span><span>
-
-</span><span>mailtrap:</span><span>
-  </span><span>secretName:</span><span></span><span>resilient-mailtrap-secret</span><span>
-</span></span></code></div></div></pre>
+The single `k8s-secrets.yaml` at the repo root holds all credentials in one Kubernetes `Secret` object. The Helm chart mounts it via `envFrom: secretRef`.
 
 ---
 
-## 2️⃣ Create Secrets **outside Helm**
+## Creating the Secret
 
-### Example: Postgres
+The file `k8s-secrets.yaml` is `.gitignore`'d — you must create it yourself before deploying:
 
-<pre class="overflow-visible! px-0!" data-start="1963" data-end="2144"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(var(--sticky-padding-top)+9*var(--spacing))]"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre! language-bash"><span><span>kubectl create secret generic resilient-postgres-secret \
-  --from-literal=POSTGRES_USER=postgres \
-  --from-literal=POSTGRES_PASSWORD=postgres \
-  -n resilient-platform
-</span></span></code></div></div></pre>
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: resilient-platform-secret
+  namespace: resilient-platform
+type: Opaque
+stringData:
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: your-secure-password
+  POSTGRES_DB: notifications
+  S3_ACCESS_KEY: your-minio-access-key
+  S3_SECRET_KEY: your-minio-secret-key
+  MAILTRAP_API_KEY: your-mailtrap-key
+  MAILTRAP_INBOX_ID: "123456"
+  MAILTRAP_USE_SANDBOX: "true"
+  MAILTRAP_SENDER_EMAIL: hello@demomailtrap.co
+  MAILTRAP_SENDER_NAME: Resilient Job Platform
+```
 
-### Example: Mailtrap
+Apply it **before** running `helm upgrade`:
 
-<pre class="overflow-visible! px-0!" data-start="2168" data-end="2303"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(var(--sticky-padding-top)+9*var(--spacing))]"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre! language-bash"><span><span>kubectl create secret generic resilient-mailtrap-secret \
-  --from-literal=MAILTRAP_API_KEY=xxxxx \
-  -n resilient-platform
-</span></span></code></div></div></pre>
-
-These secrets:
-
-* are **not in Git**
-* live only in the cluster
-* can be rotated independently
-
----
-
-## 3️⃣ Helm Deployment references existing secrets
-
-### `backend-deployment.yaml`
-
-<pre class="overflow-visible! px-0!" data-start="2487" data-end="2687"><div class="contain-inline-size rounded-2xl corner-superellipse/1.1 relative bg-token-sidebar-surface-primary"><div class="sticky top-[calc(var(--sticky-padding-top)+9*var(--spacing))]"><div class="absolute end-0 bottom-0 flex h-9 items-center pe-2"><div class="bg-token-bg-elevated-secondary text-token-text-secondary flex items-center gap-4 rounded-sm px-2 font-sans text-xs"></div></div></div><div class="overflow-y-auto p-4" dir="ltr"><code class="whitespace-pre! language-yaml"><span><span>envFrom:</span><span>
-  </span><span>-</span><span></span><span>secretRef:</span><span>
-      </span><span>name:</span><span> {{ </span><span>.Values.postgres.secretName</span><span> }}
-  </span><span>-</span><span></span><span>secretRef:</span><span>
-      </span><span>name:</span><span> {{ </span><span>.Values.minio.secretName</span><span> }}
-  </span><span>-</span><span></span><span>secretRef:</span><span>
-      </span><span>name:</span><span> {{ </span><span>.Values.mailtrap.secretName</span><span> }}
-</span></span></code></div></div></pre>
-
-Now Helm:
-
-* does **not** know secret values
-* only knows **names**
-* becomes environment-agnostic
+```bash
+kubectl apply -f k8s-secrets.yaml -n resilient-platform
+```
 
 ---
 
-# This Is How Enterprises Actually Do It
+## How Helm References the Secret
 
-| Environment | Secret Creation              |
-| ----------- | ---------------------------- |
-| Local       | `kubectl create secret …` |
-| CI/CD       | Injected by pipeline         |
-| Prod        | Vault / External Secrets     |
-| GitOps      | Sealed Secrets               |
+In `helm/resilient-platform/templates/`, the backend and worker deployments use:
+
+```yaml
+envFrom:
+  - configMapRef:
+      name: {{ include "resilient-platform.fullname" . }}-config
+  - secretRef:
+      name: resilient-platform-secret
+```
+
+This merges all ConfigMap keys (non-sensitive config) and Secret keys (credentials) into the pod's environment.
+
+---
+
+## Why Not Store Secrets in `values.yaml`?
+
+If you put `postgres.password: mypassword` in `values.yaml` and commit it:
+
+- **Git history permanently leaks the secret**
+- You can change the value later but the old value still exists in `git log`
+- Rotation becomes painful (invalidate old + rotate + update everywhere)
+- Violates any security baseline (SOC2, ISO 27001, etc.)
+
+By using `k8s-secrets.yaml` (gitignored), secrets never touch the repo.
+
+---
+
+## Production Secret Management Options
+
+For a real production system, replace the manual `kubectl apply` with one of:
+
+| Option                        | When to use          | How it works                                                      |
+| ----------------------------- | -------------------- | ----------------------------------------------------------------- |
+| **Sealed Secrets**            | GitOps (ArgoCD/Flux) | Encrypt with cluster public key; safe to commit encrypted YAML    |
+| **External Secrets Operator** | Cloud-native         | Pulls from AWS Secrets Manager, GCP Secret Manager, Vault         |
+| **Vault Agent Injector**      | HashiCorp Vault      | Injects secrets as files into pod via sidecar                     |
+| **CI/CD injection**           | GitHub Actions, etc. | Pipeline creates/updates the Secret from CI secrets before deploy |
+
+For this learning project, manual `kubectl apply` is sufficient.
+
+---
+
+## Rotating a Secret
+
+```bash
+# Edit the secret (opens in $EDITOR)
+kubectl edit secret resilient-platform-secret -n resilient-platform
+
+# Or update a specific key
+kubectl patch secret resilient-platform-secret -n resilient-platform \
+  --type='json' \
+  -p='[{"op": "replace", "path": "/data/POSTGRES_PASSWORD", "value": "'$(echo -n newpassword | base64)'"}]'
+
+# Restart pods to pick up the new secret value
+kubectl rollout restart deployment -n resilient-platform
+```

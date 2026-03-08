@@ -1,97 +1,120 @@
-Things to do now:
-First take a look at the update structure now then I will tell you the requirements 1 by 1:
+# Backend — Adding a New Job Type (Step-by-Step Guide)
 
-Structure:
+This is a reference guide for "future you" — steps you will follow every time you add a new processor to this platform.
 
-i750332@GR2F96R7YN app % tree -L 7
-.
-├── core
-│   ├── logging.py
-│   └── settings.py
-├── db
-│   ├── base.py
-│   ├── models
-│   │   ├── __init__.py
-│   │   └── job.py
-│   └── session.py
-├── models
-│   └── job.py
-├── processors
-│   ├── base.py
-│   ├── csv
-│   │   ├── column_stats.py
-│   │   ├── deduplicate.py
-│   │   └── row_count.py
-│   ├── json
-│   └── registry.py
-├── queues
-│   └── job_queue.py
-├── repositories
-│   ├── job_repository.py
-│   └── mappers.py
-├── routes
-│   └── jobs.py
-├── schemas
-│   ├── job.py
-│   └── job_status.py
-└── workers
-    ├── __init__.py
-    └── worker.py
+---
 
-13 directories, 20 files
+## What is a Job Type?
 
-1. Define jobs for json -> one thing I could think of is
-many time the json object are not sorted this leads to unwanted git diff - make a function to eddiciently sort the file
+A **job type** is a named processing operation that the worker knows how to execute. Examples:
+- `CSV_ROW_COUNT` — count rows in a CSV file
+- `JSON_CANONICALIZE` — sort JSON keys for deterministic git diffs
+- `CSV_DEDUPLICATE` — remove duplicate rows from a CSV
 
-2. define codes for all the processor functions of csv and json -  give the actual working logic
+Each job type maps to a **Processor class** that receives a local input file path and returns a result dict.
 
-3. in registory - you ahve defined processors here:
-from app.processors.csv.row_count import RowCountProcessor
-from app.processors.csv.column_stats import ColumnStatsProcessor
+---
+
+## Step-by-Step: Adding a New Job Type
+
+### 1. Register the enum
+
+Open `backend/app/core/enums/job_type.py` and add your new type:
+
+```python
+class JobType(str, Enum):
+    TEST_JOB = "TEST_JOB"
+    CSV_ROW_COUNT = "CSV_ROW_COUNT"
+    # ...
+    MY_NEW_PROCESSOR = "MY_NEW_PROCESSOR"   # ← add here
+```
+
+### 2. Write the Processor
+
+Create `backend/app/processors/<category>/<name>.py`:
+
+```python
+from app.processors.base import BaseProcessor
+
+class MyNewProcessor(BaseProcessor):
+    def process(self, payload: dict) -> dict:
+        """
+        payload keys (always present):
+          job_id          - str UUID
+          job_type        - str enum value
+          input_file_path - str, absolute local path to downloaded input file
+          input_metadata  - dict, caller-provided config
+        
+        Return a JSON-serializable dict. This becomes result.json in MinIO.
+        """
+        input_path = payload["input_file_path"]
+        meta = payload.get("input_metadata", {})
+        
+        # Do your processing here
+        result = {"status": "ok", "rows": 42}
+        
+        return result
+```
+
+### 3. Register the Processor
+
+Open `backend/app/processors/registry.py` and add:
+
+```python
+from app.processors.my_category.my_processor import MyNewProcessor
 
 PROCESSORS = {
-    "csv_row_count": RowCountProcessor(),
-    "csv_column_stats": ColumnStatsProcessor(),
+    ...
+    JobType.MY_NEW_PROCESSOR: MyNewProcessor(),
 }
+```
 
-def get_processor(name: str):
-    if name not in PROCESSORS:
-        raise ValueError(f"Unknown processor: {name}")
-    return PROCESSORS[name]
+### 4. (Optional) Validate input_metadata
 
-But it is not at all good practice
-we have something like backend/app/schemas/job_status.py which defines job statuses
+If your processor needs specific metadata keys, add validation in `backend/app/core/job_factory.py`:
 
-from enum import Enum
+```python
+def build_input_metadata(job_type, input_file_path, input_metadata):
+    if job_type == JobType.MY_NEW_PROCESSOR:
+        return {
+            "my_required_key": input_metadata.get("my_required_key", "default_value"),
+        }
+    # ... other types
+```
 
-class JobStatus(str, Enum):
-    CREATED = "CREATED"
-    QUEUED = "QUEUED"
-    PROCESSING = "PROCESSING"
-    RETRYING = "RETRYING"
-    FAILED = "FAILED"
-    COMPLETED = "COMPLETED"
-    DEAD = "DEAD"
+### 5. Update the Frontend
 
-similarly add a file over there to mention the jobs so that it is properly defined!
+Open `frontend/lib/api.ts` and add the label:
 
-4. Add the job_type in all the job actions, routes, db etc... etc..
-this need a whole bunch of change [we can do it one by one]
+```typescript
+export const JOB_TYPE_LABELS: Record<JobType, string> = {
+  TEST_JOB:           "Test Run",
+  CSV_ROW_COUNT:      "CSV Row Count",
+  // ...
+  MY_NEW_PROCESSOR:   "My New Processor",   // ← add here
+};
+```
 
-5. I think this needs an update! atleast define how are we storing the output!
-# intentionally dumb for now.
-def process_job(job, repo: JobRepository):
-    try:
-        processor = get_processor(job.job_type)
-        result = processor.process(job.input)
+`JobTypeSelector.tsx` picks this up automatically — no changes needed there.
 
-        output_path = store_result(result) # f"/tmp/output/{job.job_id}.txt"
-        repo.mark_completed(job.job_id, output_path)
+---
 
-        logger.info(f"Completed job {job.job_id}, output at {output_path}")
+## Current Processors (Reference)
 
-    except Exception as e:
-        logger.exception(f"Failed to process job {job.job_id}: {e}")
-        repo.handle_failure(job_id=job.job_id, error_message=str(e))
+| Job Type            | File                                   | Input | Output                    |
+| ------------------- | -------------------------------------- | ----- | ------------------------- |
+| `TEST_JOB`          | `processors/json/test.py` (or similar) | Any   | `{"status": "ok"}`        |
+| `CSV_ROW_COUNT`     | `processors/csv/row_count.py`          | CSV   | `{"row_count": N}`        |
+| `CSV_COLUMN_STATS`  | `processors/csv/column_stats.py`       | CSV   | Per-column stats dict     |
+| `CSV_DEDUPLICATE`   | `processors/csv/deduplicate.py`        | CSV   | Deduplicated rows + count |
+| `JSON_CANONICALIZE` | `processors/json/canonicalize.py`      | JSON  | Sorted/canonical JSON     |
 
-6. is there anymore improvements that you want to do please suggest and tell me what to do!
+---
+
+## Design Rules (Don't Break These)
+
+1. **Processors must be stateless.** No instance variables that change between calls. The registry creates one singleton per type.
+2. **Processors read from local filesystem, not MinIO.** The worker downloads the file before calling `process()`. Processors should never instantiate `StorageClient`.
+3. **Processors always return a dict.** The worker serializes this to `result.json` using `json.dump`. Don't return strings, lists, or non-serializable types at the top level.
+4. **Processors must not catch all exceptions.** Let exceptions bubble up to the worker — it handles `FAILED` state and notifications.
+5. **Never access `context` or `notifications` in a processor.** Those are platform concerns handled by the worker and dispatcher, not processor business.

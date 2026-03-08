@@ -30,13 +30,30 @@ For this learning project, MinIO credentials (`S3_ACCESS_KEY`, `S3_SECRET_KEY`) 
 
 ---
 
-### 3. No multipart upload for very large files
+### 3. Large file uploads (>500 MB) — soft client-side guard, not a hard architectural limit
 
-The presigned URL flow supports single-PUT uploads up to **500 MB** (configurable in `lib/constants.ts` via `MAX_SINGLE_PUT_BYTES`). MinIO's single PUT limit is 5 GB, but large files over ~500 MB would benefit from multipart upload (parallel chunks + resumability).
+> **Status: Partially resolved.** The original blocking concern was that presigned URLs could not be used because the browser cannot resolve the MinIO internal cluster DNS (`resilient-platform-minio-service:9000`). This was **fixed** by replacing the presigned URL flow with a **server-side streaming proxy** (`PUT /api/minio-upload`).
+>
+> The upload now flows: **Browser → Next.js server (`/api/minio-upload`) → MinIO (cluster DNS)**, without the file ever buffering in RAM. Files of any size are theoretically supported up to MinIO's single-PUT limit of **5 GB**.
 
-**Current impact:** Files above 500 MB are rejected client-side with an error message. This is a hard limit, not a performance degradation.
+**What still exists:** A 500 MB client-side guard in `lib/constants.ts`:
 
-**Future fix:** Implement MinIO multipart upload using `createMultipartUpload` + `presignedPutObject` per part + `completeMultipartUpload`.
+```ts
+/** Max file size accepted by the /api/minio-upload server-side proxy (500 MB).
+ *  Files larger than this would need chunked/multipart upload (future work). */
+export const MAX_SINGLE_PUT_BYTES = 500 * 1024 * 1024;
+```
+
+The `useFileUpload` hook rejects files above this limit before the upload even starts. This is a **configurable soft limit**, not an architectural constraint. You can raise it (up to MinIO's 5 GB single-PUT cap) without any code changes other than updating this constant.
+
+**Why 500 MB?** It is a conservative default. For very large files (e.g. a 4 GB CSV), a single PUT means the entire upload is lost if the network drops. Multipart upload would allow resuming from the last successful chunk.
+
+**Future improvement:** Implement chunked multipart upload for files above a threshold:
+1. `POST /api/multipart/initiate` → returns `uploadId` from MinIO
+2. Sequential/parallel `PUT /api/multipart/part?uploadId=X&partNumber=N` per chunk
+3. `POST /api/multipart/complete` → assembles parts in MinIO
+
+This gives full resumability and progress tracking per chunk. Not needed for the current learning project scope but well-defined as the next step.
 
 ---
 
