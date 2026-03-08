@@ -39,23 +39,43 @@ For this learning project, MinIO credentials (`S3_ACCESS_KEY`, `S3_SECRET_KEY`) 
 | File size             | Upload path                      | Behaviour                        |
 | --------------------- | -------------------------------- | -------------------------------- |
 | ≤ 500 MB              | Single PUT `/api/minio-upload`   | Existing path, unchanged         |
-| > 500 MB (up to 5 GB) | Multipart via `/api/multipart/*` | 64 MB chunks, progress per chunk |
+| > 500 MB (up to 5 GB) | Multipart via `/api/multipart/*` | 16 MB chunks, progress per chunk |
 | > 5 GB                | Rejected client-side             | MinIO single-object hard limit   |
 
 **How multipart works:**
 1. `POST /api/multipart/initiate?filename=big.csv` → MinIO returns an `uploadId`
-2. File is sliced into 64 MB `Blob` chunks in the browser
+2. File is sliced into 16 MB `Blob` chunks in the browser
 3. Each chunk: `PUT /api/multipart/part?uploadId=X&key=K&partNumber=N` (buffered on Next.js server, sent to MinIO `UploadPart`)
 4. After all chunks: `POST /api/multipart/complete` with all ETags → MinIO assembles the object atomically
 
 **Constants in `lib/constants.ts`:**
 ```ts
-export const MAX_SINGLE_PUT_BYTES = 500 * 1024 * 1024;  // threshold for switching to multipart
-export const MULTIPART_CHUNK_SIZE  =  64 * 1024 * 1024;  // 64 MB per chunk
+export const MAX_SINGLE_PUT_BYTES  = 500 * 1024 * 1024;   // 500 MB — threshold for switching to multipart
+export const MULTIPART_CHUNK_SIZE  =  16 * 1024 * 1024;   // 16 MB per chunk (see note on OOMKill below)
 export const MAX_FILE_SIZE_BYTES   =   5 * 1024 * 1024 * 1024;  // 5 GB hard limit
 ```
 
-**Future improvement:** Parallelize chunk uploads (currently sequential). Sequential is correct and sufficient for testing workloads; parallel would reduce wall-clock time for very large files on high-bandwidth networks.
+**Debugging story — two bugs hit and fixed:**
+
+**Bug 1 — MinIO SDK internal method crash**  
+First attempt used `client.uploadPart()` directly. Even though TypeScript types expose this method (it is inherited from the internal base class), calling it directly throws:
+```
+TypeError: Cannot read properties of undefined (reading 'ETag')
+```
+The method relies on private SDK plumbing not available from the public `Client`. **Fix:** replaced with `client.presignedUrl('PUT', bucket, key, TTL, { uploadId, partNumber })` + a server-side `fetch()` to that URL. The presigned URL targets the specific S3 `UploadPart` operation; the ETag is read from the response headers directly.
+
+**Bug 2 — OOMKilled at 64 MB chunk size**  
+Initial chunk size was 64 MB. The frontend pod had a 256 Mi memory limit. Peak usage during a chunk upload:
+- Node.js/Next.js base: ~130 MB
+- `req.arrayBuffer()` buffer: 64 MB
+- `fetch()` body copy: ~64 MB
+- **Total: ~250 MB+ → kernel OOMKilled the pod**
+
+**Fix:** two-pronged:
+1. Chunk size reduced to 16 MB (each request now peaks at ~130 + 16 + 16 = ~162 MB)
+2. Frontend pod memory limit raised from `256Mi` → `512Mi` in `helm/resilient-platform/values.yaml`
+
+**Future improvement:** Parallelize chunk uploads (currently sequential). Sequential is simpler and sufficient for testing; parallel would reduce wall-clock time on high-bandwidth networks.
 
 ---
 
