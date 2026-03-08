@@ -2,24 +2,26 @@
 //
 // Uploads a single chunk (part) of a multipart upload to MinIO.
 //
-// WHY: The browser slices the file into 64 MB Blob chunks and sends them
-// one at a time. This route receives the raw chunk body and forwards it to
-// MinIO using the SDK's uploadPart() method (the S3 UploadPart operation).
-// MinIO returns an ETag for each part; the browser collects all ETags and
-// sends them to /api/multipart/complete to assemble the final object.
+// WHY presignedUrl and not uploadPart():
+//   client.uploadPart() is an INTERNAL MinIO SDK method. Calling it directly
+//   throws "Cannot read properties of undefined (reading 'ETag')" because the
+//   method relies on private SDK plumbing not exposed in the public interface.
 //
-// WHY Buffer and not Readable: The MinIO JS SDK's uploadPart() expects a
-// Binary payload (Buffer). For 64 MB chunks, buffering in RAM is fine —
-// that's the whole point of chunking: each chunk fits comfortably in memory.
+//   The correct public approach:
+//     1. client.presignedUrl('PUT', bucket, key, TTL, { uploadId, partNumber })
+//        → generates a presigned MinIO URL scoped to this specific part
+//     2. fetch(presignedUrl, { method: 'PUT', body: chunkBuffer })
+//        → server-side HTTP PUT to MinIO (cluster DNS resolves fine from server)
+//     3. Read ETag from response headers and return it to the browser
 //
 // Flow:
 //   Browser → PUT /api/multipart/part?uploadId=X&key=K&partNumber=N
-//             (body = raw chunk bytes)
-//   Next.js server → client.uploadPart({ ..., uploadID, partNumber }, buffer)
+//             (body = raw chunk bytes, Content-Length = chunk size in bytes)
+//   Next.js server → presignedUrl → fetch(presignedUrl) → MinIO
 //   Response: { etag: "..." }
 //
 // MinIO requires partNumber to be 1-indexed (1, 2, 3, ...).
-// MinIO requires each part to be ≥5 MB, except the last part.
+// MinIO requires each part ≥5 MB, except the last part.
 // At 64 MB chunks, this is always satisfied.
 import { NextRequest, NextResponse } from "next/server";
 import { getMinioClient, getInputBucket } from "@/lib/minio-client";
@@ -52,24 +54,52 @@ export async function PUT(req: NextRequest) {
         const client = getMinioClient();
         const bucket = getInputBucket();
 
-        // Buffer the chunk — 64 MB fits comfortably in RAM and is required by
-        // the MinIO SDK's uploadPart() which expects a Binary (Buffer) payload.
+        // Buffer the chunk. At 64 MB per chunk this is fine in RAM.
         const chunkBuffer = Buffer.from(await req.arrayBuffer());
 
-        const result = await client.uploadPart(
+        // Generate a presigned PUT URL scoped to this specific part.
+        // reqParams causes MinIO to add ?partNumber=N&uploadId=X to the URL,
+        // making it an S3 UploadPart presigned URL (not a regular PUT).
+        const presignedUrl = await client.presignedUrl(
+            "PUT",
+            bucket,
+            key,
+            15 * 60, // 15 minute TTL — more than enough for one 64 MB chunk
             {
-                bucketName: bucket,
-                objectName: key,
-                uploadID: uploadId,
-                partNumber,
-                headers: {
-                    "content-length": String(chunkBuffer.length),
-                },
-            },
-            chunkBuffer
+                uploadId,
+                partNumber: String(partNumber),
+            }
         );
 
-        return NextResponse.json({ etag: result.etag, partNumber });
+        // Execute the PUT from the Next.js server — cluster DNS resolves MinIO.
+        const minioRes = await fetch(presignedUrl, {
+            method: "PUT",
+            body: chunkBuffer,
+            headers: {
+                "Content-Length": String(chunkBuffer.length),
+            },
+        });
+
+        if (!minioRes.ok) {
+            const text = await minioRes.text().catch(() => "");
+            console.error(`[multipart/part] MinIO rejected part ${partNumber}:`, text);
+            return NextResponse.json(
+                { error: `MinIO rejected part ${partNumber}: ${minioRes.status}` },
+                { status: 502 }
+            );
+        }
+
+        // MinIO returns the ETag in the response headers for UploadPart.
+        // Strip surrounding quotes (MinIO wraps ETags in double-quotes).
+        const etag = (minioRes.headers.get("etag") ?? "").replace(/"/g, "");
+        if (!etag) {
+            return NextResponse.json(
+                { error: "MinIO did not return an ETag for this part" },
+                { status: 502 }
+            );
+        }
+
+        return NextResponse.json({ etag, partNumber });
     } catch (err) {
         console.error(`[multipart/part] error on part ${partNumber}:`, err);
         return NextResponse.json(
