@@ -73,7 +73,24 @@ graph TD
 
 ---
 
-## 🛠 Quick Start (Minikube)
+## 🛠 Plug & Play Job Architecture
+
+This platform is built for **extensibility**. You can plug in a new data processing function (e.g., custom JSON filtering, CSV enrichment, or log parsing) in under 5 minutes without touching the core infrastructure.
+
+### How to add your own Job Type:
+1.  **Define**: Add a new key to the `JobType` enum in the Backend.
+2.  **Process**: Create a Python class inheriting from `JobProcessor` and write your logic (e.g., `MyCustomFilter`).
+3.  **Register**: Drop your new class into the `registry.py` mapping.
+4.  **UI**: Add a human-readable label in the Frontend `api.ts`.
+
+> [!TIP]
+> **Example**: Need to remove PII from JSON files? Just create a `JSON_PII_REMOVAL` processor, register it, and the UI will automatically show a "PII Removal" button for your users.
+
+For a deep dive, see the **[Adding a New Job Type Guide](docs/backend/job-suggestions.md)**.
+
+---
+
+## 🚀 Quick Start (Minikube)
 
 ### 1. Prerequisites
 - Minikube with `istio` and `ingress` addons enabled.
