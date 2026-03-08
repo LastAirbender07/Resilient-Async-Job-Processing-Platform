@@ -1,4 +1,4 @@
-from prometheus_fastapi_instrumentator import Instrumentator, metrics
+from prometheus_fastapi_instrumentator import Instrumentator
 
 
 def instrument_app(app, app_name: str = "resilient-platform-backend") -> None:
@@ -7,28 +7,18 @@ def instrument_app(app, app_name: str = "resilient-platform-backend") -> None:
     Exposes a /metrics endpoint and records metrics compatible with
     Grafana dashboard ID 16110.
     """
+    # Use the constructor pattern from the documentation.
+    # custom_labels adds our app_name to EVERY metric generated.
     instrumentator = Instrumentator(
-        excluded_handlers=["/metrics", "/health"],
         should_group_status_codes=False,
         should_ignore_untemplated=True,
         should_respect_env_var=True,
         should_instrument_requests_inprogress=True,
-        inprogress_name="fastapi_requests_inprogress",
+        inprogress_name="requests_inprogress",
         inprogress_labels=True,
+        custom_labels={"app_name": app_name}
     )
 
-    # Add the info metric which provides the app_name label that dashboard 16110 uses
-    instrumentator.add(
-        metrics.info(
-            name="fastapi_app_info",
-            documentation="FastAPI application information.",
-            labelnames=("app_name",),
-            labelvalues=(app_name,),
-        )
-    )
-
-    # Note: Modern versions of the instrumentator might not add app_name to EVERY metric
-    # by default via the constructor. If the dashboard query sum(fastapi_requests_total{app_name="$app_name"})
-    # is used, it often relies on either the info metric join or a constant label.
-    
-    instrumentator.instrument(app).expose(app, endpoint="/metrics")
+    # Use 'fastapi' as namespace to get close to the dashboard's expected names.
+    # This produces: fastapi_http_requests_total, etc.
+    instrumentator.instrument(app, metric_namespace="fastapi").expose(app, endpoint="/metrics")
