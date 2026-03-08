@@ -84,3 +84,8 @@
 - Docker image pushed: jayaraj0781/resilient-async-job-processing-platform-backend:1.0.6
 - Updated helm/resilient-platform/values.yaml (.image.tag)
 
+## [backend] 1.0.7 — 20260308080716
+- Auto-build by CI-CD pipeline
+- Docker image pushed: jayaraj0781/resilient-async-job-processing-platform-backend:1.0.7
+- Updated helm/resilient-platform/values.yaml (.image.tag)
+
