@@ -35,11 +35,17 @@ export const MAX_SINGLE_PUT_BYTES = 500 * 1024 * 1024; // 500 MB
 
 /**
  * Size of each chunk in a multipart upload.
- * MinIO requires parts to be ≥5 MB (except the last). 64 MB is a practical
- * choice: large enough to be efficient on fast networks, small enough that a
- * retry of a failed chunk is not expensive.
+ * MinIO requires parts to be ≥5 MB (except the last). 16 MB is the sweet spot:
+ * - Well above MinIO's 5 MB minimum, so the last-part exception rarely matters
+ * - Small enough that the Next.js server-side buffer (16 MB per request) stays
+ *   well within the frontend pod memory limit (512 Mi) alongside Node.js overhead
+ * - Large enough to be efficient (a 600 MB file = ~38 parts, not thousands)
+ *
+ * Why not 64 MB?  At 64 MB per chunk, the peak RSS (chunk buffer + fetch() body
+ * duplication + Next.js base ~130 MB) exceeds 250 MB, which caused OOMKilled
+ * at the previous 256 Mi pod limit.
  */
-export const MULTIPART_CHUNK_SIZE = 64 * 1024 * 1024; // 64 MB
+export const MULTIPART_CHUNK_SIZE = 16 * 1024 * 1024; // 16 MB
 
 /**
  * Hard upper limit on file size — enforced client-side before the upload starts.
