@@ -30,32 +30,36 @@ For this learning project, MinIO credentials (`S3_ACCESS_KEY`, `S3_SECRET_KEY`) 
 
 ---
 
-### 3. Large file uploads (>500 MB) — soft client-side guard, not a hard architectural limit
+### 3. Large file uploads (>500 MB) — multipart upload implemented ✅
 
-> **Status: Partially resolved.** The original blocking concern was that presigned URLs could not be used because the browser cannot resolve the MinIO internal cluster DNS (`resilient-platform-minio-service:9000`). This was **fixed** by replacing the presigned URL flow with a **server-side streaming proxy** (`PUT /api/minio-upload`).
->
-> The upload now flows: **Browser → Next.js server (`/api/minio-upload`) → MinIO (cluster DNS)**, without the file ever buffering in RAM. Files of any size are theoretically supported up to MinIO's single-PUT limit of **5 GB**.
+> **Status: Resolved.** The upload layer was originally designed around presigned URLs (browser → MinIO directly), which broke due to MinIO's internal cluster DNS not being accessible from the browser. That was fixed by switching to a **server-side streaming proxy** (`PUT /api/minio-upload`). **Multipart upload** for files above 500 MB is now also fully implemented.
 
-**What still exists:** A 500 MB client-side guard in `lib/constants.ts`:
+**Current upload routing (automatic, based on file size):**
 
+| File size             | Upload path                      | Behaviour                        |
+| --------------------- | -------------------------------- | -------------------------------- |
+| ≤ 500 MB              | Single PUT `/api/minio-upload`   | Existing path, unchanged         |
+| > 500 MB (up to 5 GB) | Multipart via `/api/multipart/*` | 64 MB chunks, progress per chunk |
+| > 5 GB                | Rejected client-side             | MinIO single-object hard limit   |
+
+**How multipart works:**
+1. `POST /api/multipart/initiate?filename=big.csv` → MinIO returns an `uploadId`
+2. File is sliced into 64 MB `Blob` chunks in the browser
+3. Each chunk: `PUT /api/multipart/part?uploadId=X&key=K&partNumber=N` (buffered on Next.js server, sent to MinIO `UploadPart`)
+4. After all chunks: `POST /api/multipart/complete` with all ETags → MinIO assembles the object atomically
+
+**Constants in `lib/constants.ts`:**
 ```ts
-/** Max file size accepted by the /api/minio-upload server-side proxy (500 MB).
- *  Files larger than this would need chunked/multipart upload (future work). */
-export const MAX_SINGLE_PUT_BYTES = 500 * 1024 * 1024;
+export const MAX_SINGLE_PUT_BYTES = 500 * 1024 * 1024;  // threshold for switching to multipart
+export const MULTIPART_CHUNK_SIZE  =  64 * 1024 * 1024;  // 64 MB per chunk
+export const MAX_FILE_SIZE_BYTES   =   5 * 1024 * 1024 * 1024;  // 5 GB hard limit
 ```
 
-The `useFileUpload` hook rejects files above this limit before the upload even starts. This is a **configurable soft limit**, not an architectural constraint. You can raise it (up to MinIO's 5 GB single-PUT cap) without any code changes other than updating this constant.
-
-**Why 500 MB?** It is a conservative default. For very large files (e.g. a 4 GB CSV), a single PUT means the entire upload is lost if the network drops. Multipart upload would allow resuming from the last successful chunk.
-
-**Future improvement:** Implement chunked multipart upload for files above a threshold:
-1. `POST /api/multipart/initiate` → returns `uploadId` from MinIO
-2. Sequential/parallel `PUT /api/multipart/part?uploadId=X&partNumber=N` per chunk
-3. `POST /api/multipart/complete` → assembles parts in MinIO
-
-This gives full resumability and progress tracking per chunk. Not needed for the current learning project scope but well-defined as the next step.
+**Future improvement:** Parallelize chunk uploads (currently sequential). Sequential is correct and sufficient for testing workloads; parallel would reduce wall-clock time for very large files on high-bandwidth networks.
 
 ---
+
+
 
 ### 4. No authentication
 
