@@ -56,3 +56,52 @@ spec:
   - port: metrics # Need to define this port in the deployment template
     path: /metrics
     interval: 15s
+---
+# WHY THESE PeerAuthentication POLICIES EXIST:
+#
+# The resilient-platform namespace enforces Istio STRICT mTLS, meaning all
+# inbound traffic must use mTLS. Prometheus scrapes over plain HTTP.
+# Without these exceptions, Prometheus gets "connection reset by peer" and
+# the backend/worker targets show as DOWN — causing all Grafana panels to
+# be empty.
+#
+# Solution: port-level PERMISSIVE on the specific metrics ports only.
+# All other ports (backend :5001 for API traffic, etc.) remain STRICT.
+# This follows the same pattern already used for the frontend.
+#
+# Ref: https://istio.io/latest/docs/tasks/observability/metrics/prometheus/
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-backend-metrics-permissive
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "resilient-platform.name" . }}
+      app.kubernetes.io/component: backend
+  # Namespace default is STRICT (from resilient-platform-default PeerAuthentication).
+  # Override for the metrics port only — Prometheus scrapes in plaintext.
+  portLevelMtls:
+    5001:
+      mode: PERMISSIVE
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-worker-metrics-permissive
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "resilient-platform.name" . }}
+      app.kubernetes.io/component: worker
+  # Worker starts prometheus_client.start_http_server(8000) — plaintext HTTP.
+  # PERMISSIVE on port 8000 only so Prometheus can scrape it.
+  portLevelMtls:
+    8000:
+      mode: PERMISSIVE

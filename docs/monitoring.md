@@ -68,12 +68,58 @@ Open `http://localhost:9093`
 
 ## Pre-built Dashboards in Grafana
 
-| Dashboard                                      | What to look at                                 |
-| ---------------------------------------------- | ----------------------------------------------- |
-| **Kubernetes / Compute Resources / Namespace** | CPU + memory per component                      |
-| **Kubernetes / Compute Resources / Pod**       | Per-pod resource usage                          |
-| **Istio Service Dashboard**                    | Request rate, error %, latency between services |
-| **Istio Workload Dashboard**                   | Per-workload inbound/outbound traffic           |
+> **Before using any dashboard, set the template variables** (dropdown at top of each dashboard). Without these, all panels will be empty — even if Prometheus is scraping correctly.
+
+| Variable     | Value                                                       |
+| ------------ | ----------------------------------------------------------- |
+| `datasource` | `Prometheus`                                                |
+| `namespace`  | `resilient-platform`                                        |
+| `cluster`    | leave blank (single minikube cluster)                       |
+| `job`        | `resilient-platform-backend` or `resilient-platform-worker` |
+
+**Recommended imported dashboards (Grafana.com IDs):**
+
+| Dashboard                                  | Grafana ID | What to look at                |
+| ------------------------------------------ | ---------- | ------------------------------ |
+| Kubernetes / Compute Resources / Namespace | **315**    | CPU + memory per component     |
+| Kubernetes / Compute Resources / Pod       | **12740**  | Per-pod resource usage         |
+| Istio Service Dashboard                    | **7630**   | Request rate, error %, latency |
+| Istio Workload Dashboard                   | **7636**   | Per-workload traffic           |
+
+**"No number data" error in panels?** This is not a panel bug — it means the query returned no results. Either (a) the data source variable isn't set correctly, (b) the namespace variable doesn't match, or (c) the Prometheus target for that component is DOWN. Check Prometheus → Status → Targets.
+
+---
+
+## Troubleshooting: Prometheus Targets DOWN (Istio mTLS)
+
+> **This was the initial state of this cluster.** Documenting here so "future me" knows what happened and why the fix exists.
+
+**Symptom:** All Grafana panels empty. In Prometheus → Status → Targets, the backend and worker show:
+```
+DOWN   connection reset by peer
+```
+
+**Root cause:** The `resilient-platform` namespace has a STRICT mTLS PeerAuthentication. Prometheus scrapes over plain HTTP. The Istio sidecar rejects plaintext connections with a TCP RST, causing "connection reset by peer". The frontend was UP because it already had its own PeerAuthentication exception.
+
+**Fix (applied in `helm/resilient-platform/templates/servicemonitors.yaml`):**  
+Added two port-level `PERMISSIVE` PeerAuthentication policies — one for the backend metrics port (5001) and one for the worker metrics port (8000). This allows Prometheus to scrape those specific ports over plain HTTP while all other traffic in the namespace remains STRICT mTLS.
+
+**To verify targets are UP at any time:**
+```bash
+kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090 &
+curl -s http://localhost:9090/api/v1/targets | python3 -c "
+import json, sys
+for t in json.load(sys.stdin)['data']['activeTargets']:
+    if t['labels'].get('namespace') == 'resilient-platform':
+        print(t['health'].upper(), t['labels'].get('job'), t.get('lastError',''))
+"
+```
+Expected output:
+```
+UP  resilient-platform-backend
+UP  resilient-platform/resilient-platform-worker-monitor
+UP  resilient-platform-frontend
+```
 
 ---
 
@@ -103,14 +149,24 @@ histogram_quantile(0.99, sum(rate(worker_job_duration_seconds_bucket[5m])) by (l
 
 ### Backend Metrics (port 5001)
 
-The backend FastAPI app exposes metrics at `GET /metrics`. These include HTTP request counts and latency via `prometheus_fastapi_instrumentator`.
+The backend uses `prometheus-fastapi-instrumentator` which auto-exposes metrics at `GET /metrics`.
+Import **Grafana dashboard ID 16110** ("FastAPI Observability") and set `app_name = resilient-platform-backend`.
+
+| Metric                              | Type      | Labels                                      | Description         |
+| ----------------------------------- | --------- | ------------------------------------------- | ------------------- |
+| `fastapi_requests_total`            | Counter   | `app_name`, `method`, `path`, `status_code` | Total HTTP requests |
+| `fastapi_requests_duration_seconds` | Histogram | `app_name`, `method`, `path`                | Request latency     |
+| `fastapi_requests_inprogress`       | Gauge     | `app_name`, `method`                        | Concurrent requests |
 
 ```promql
-# Backend HTTP request rate
-rate(http_requests_total{namespace="resilient-platform"}[5m])
+# Request rate (exclude /metrics path)
+rate(fastapi_requests_total{app_name="resilient-platform-backend", path!="/metrics"}[5m])
 
-# HTTP error rate (5xx)
-rate(http_requests_total{status=~"5.."}[5m])
+# P99 latency
+histogram_quantile(0.99,
+  sum(rate(fastapi_requests_duration_seconds_bucket{app_name="resilient-platform-backend"}[5m]))
+  by (le, path)
+)
 ```
 
 ### Istio Metrics

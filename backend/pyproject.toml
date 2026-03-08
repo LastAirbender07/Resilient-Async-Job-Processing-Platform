@@ -22,4 +22,5 @@ dependencies = [
     "uvicorn[standard]>=0.40.0",
     "mailtrap>=2.4.0",
     "prometheus-client>=0.24.1",
+    "prometheus-fastapi-instrumentator>=7.0.0",
 ]

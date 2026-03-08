@@ -3,16 +3,13 @@ from app.core.logging import setup_logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes.jobs import router as jobs_router
-from prometheus_client import make_asgi_app
-from app.core.metrics import PrometheusMiddleware
-# from app.db.session import engine
+from app.core.metrics import instrument_app
 
 logger = setup_logging()
 app = FastAPI(title="Resilient Async Job Processing Platform", version="0.1.0")
 
 # --- CORS ---
 origins = ["*"]
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,17 +18,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(PrometheusMiddleware)
 
-# TEMPORARY – REMOVE AFTER ALEMBIC
-# Base.metadata.create_all(bind=engine)
+# --- Prometheus metrics ---
+# Exposes /metrics using prometheus-fastapi-instrumentator.
+# Produces fastapi_* metric names compatible with Grafana dashboard ID 16110.
+# app_name label = "resilient-platform-backend" for multi-service dashboards.
+instrument_app(app, app_name="resilient-platform-backend")
 
 # --- Include API Routes ---
-app.include_router(jobs_router) 
-
-# --- Expose Metrics ---
-metrics_app = make_asgi_app()
-app.mount("/metrics", metrics_app)
+app.include_router(jobs_router)
 
 @app.get("/health")
 def health():
