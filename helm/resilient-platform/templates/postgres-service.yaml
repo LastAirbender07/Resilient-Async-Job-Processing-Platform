@@ -15,3 +15,9 @@ spec:
       port: {{ .Values.postgres.port }}
       targetPort: {{ .Values.postgres.port }}
       protocol: TCP
+    {{- if .Values.postgres.exporter.enabled }}
+    - name: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}-metrics
+      port: {{ .Values.postgres.exporter.port }}
+      targetPort: metrics
+      protocol: TCP
+    {{- end }}

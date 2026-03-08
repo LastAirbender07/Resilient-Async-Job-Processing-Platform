@@ -1,3 +1,4 @@
+{{- if .Values.monitoring.enabled -}}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -5,8 +6,7 @@ metadata:
   labels:
     {{- include "resilient-platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
-    # Note: Kube-prometheus-stack usually looks for ServiceMonitors across all namespaces, or those with a specific label.
-    release: kube-prometheus-stack # default selector for the helm chart 
+    release: {{ .Values.monitoring.release }}
 spec:
   selector:
     matchLabels:
@@ -15,7 +15,7 @@ spec:
   endpoints:
   - port: http
     path: /metrics
-    interval: 15s
+    interval: {{ .Values.monitoring.interval }}
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -24,7 +24,7 @@ metadata:
   labels:
     {{- include "resilient-platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
-    release: kube-prometheus-stack
+    release: {{ .Values.monitoring.release }}
 spec:
   selector:
     matchLabels:
@@ -33,7 +33,7 @@ spec:
   endpoints:
   - port: http
     path: /api/metrics
-    interval: 15s
+    interval: {{ .Values.monitoring.interval }}
 ---
 # The worker doesn't have a service by default because it's an async background processor.
 # However, ServiceMonitors require a Service to discover the Pods (or we can use PodMonitor).
@@ -46,62 +46,123 @@ metadata:
   labels:
     {{- include "resilient-platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: worker
-    release: kube-prometheus-stack
+    release: {{ .Values.monitoring.release }}
 spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "resilient-platform.name" . }}
       app.kubernetes.io/component: worker
   podMetricsEndpoints:
-  - port: metrics # Need to define this port in the deployment template
+  - port: metrics
     path: /metrics
-    interval: 15s
+    interval: {{ .Values.monitoring.interval }}
 ---
-# WHY THESE PeerAuthentication POLICIES EXIST:
-#
-# The resilient-platform namespace enforces Istio STRICT mTLS, meaning all
-# inbound traffic must use mTLS. Prometheus scrapes over plain HTTP.
-# Without these exceptions, Prometheus gets "connection reset by peer" and
-# the backend/worker targets show as DOWN — causing all Grafana panels to
-# be empty.
-#
-# Solution: port-level PERMISSIVE on the specific metrics ports only.
-# All other ports (backend :5001 for API traffic, etc.) remain STRICT.
-# This follows the same pattern already used for the frontend.
-#
-# Ref: https://istio.io/latest/docs/tasks/observability/metrics/prometheus/
-apiVersion: security.istio.io/v1beta1
-kind: PeerAuthentication
+# PodMonitor for Istio sidecars (Envoy stats)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
 metadata:
-  name: {{ include "resilient-platform.fullname" . }}-backend-metrics-permissive
+  name: {{ include "resilient-platform.fullname" . }}-istio-sidecar-monitor
   labels:
     {{- include "resilient-platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: backend
+    release: {{ .Values.monitoring.release }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      security.istio.io/tlsMode: istio
+  podMetricsEndpoints:
+  - path: /stats/prometheus
+    targetPort: {{ .Values.monitoring.istio.sidecarStatsPort }}
+    interval: {{ .Values.monitoring.interval }}
+---
+# ServiceMonitor for MinIO
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-minio-monitor
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}
+    release: {{ .Values.monitoring.release }}
 spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "resilient-platform.name" . }}
-      app.kubernetes.io/component: backend
-  # Namespace default is STRICT (from resilient-platform-default PeerAuthentication).
-  # Override for the metrics port only — Prometheus scrapes in plaintext.
-  portLevelMtls:
-    5001:
-      mode: PERMISSIVE
+      app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}
+  endpoints:
+  - port: {{ include "resilient-platform.fullname" . }}-{{ .Values.minio.host }}-api
+    path: /minio/v2/metrics/cluster
+    interval: {{ .Values.monitoring.interval }}
+
+{{- if .Values.postgres.exporter.enabled }}
 ---
-apiVersion: security.istio.io/v1beta1
-kind: PeerAuthentication
+# ServiceMonitor for Postgres Exporter
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
 metadata:
-  name: {{ include "resilient-platform.fullname" . }}-worker-metrics-permissive
+  name: {{ include "resilient-platform.fullname" . }}-postgres-monitor
   labels:
     {{- include "resilient-platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: worker
+    app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}
+    release: {{ .Values.monitoring.release }}
 spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "resilient-platform.name" . }}
-      app.kubernetes.io/component: worker
-  # Worker starts prometheus_client.start_http_server(8000) — plaintext HTTP.
-  # PERMISSIVE on port 8000 only so Prometheus can scrape it.
+      app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}
+  endpoints:
+  - port: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}-metrics
+    interval: {{ .Values.monitoring.interval }}
+{{- end }}
+
+{{- if .Values.redis.exporter.enabled }}
+---
+# ServiceMonitor for Redis Exporter
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-redis-monitor
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.redis.host }}
+    release: {{ .Values.monitoring.release }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "resilient-platform.name" . }}
+      app.kubernetes.io/component: {{ include "resilient-platform.fullname" . }}-{{ .Values.redis.host }}
+  endpoints:
+  - port: {{ include "resilient-platform.fullname" . }}-{{ .Values.redis.host }}-metrics
+    interval: {{ .Values.monitoring.interval }}
+{{- end }}
+
+---
+# PeerAuthentication for all metrics ports to allow Prometheus scraping in STRICT mTLS ns
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: {{ include "resilient-platform.fullname" . }}-metrics-permissive
+  labels:
+    {{- include "resilient-platform.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
   portLevelMtls:
-    8000:
+    {{ .Values.backend.port | default 5001 }}:
       mode: PERMISSIVE
+    {{ .Values.worker.port | default 8000 }}:
+      mode: PERMISSIVE
+    {{ .Values.monitoring.istio.sidecarStatsPort }}:
+      mode: PERMISSIVE
+    {{ .Values.minio.port | default 9000 }}:
+      mode: PERMISSIVE
+    {{- if .Values.postgres.exporter.enabled }}
+    {{ .Values.postgres.exporter.port }}:
+      mode: PERMISSIVE
+    {{- end }}
+    {{- if .Values.redis.exporter.enabled }}
+    {{ .Values.redis.exporter.port }}:
+      mode: PERMISSIVE
+    {{- end }}
+{{- end -}}

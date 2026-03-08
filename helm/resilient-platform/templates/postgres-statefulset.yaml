@@ -50,6 +50,28 @@ spec:
             failureThreshold: {{ .Values.postgres.readinessProbe.failureThreshold }}
           resources:
             {{- toYaml .Values.postgres.resources | nindent 12 }}
+        {{- if .Values.postgres.exporter.enabled }}
+        - name: postgres-exporter
+          image: {{ .Values.postgres.exporter.image }}
+          ports:
+            - containerPort: {{ .Values.postgres.exporter.port }}
+              name: metrics
+          env:
+            - name: DATA_SOURCE_NAME
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:{{ .Values.postgres.port }}/$(POSTGRES_DB)?sslmode=disable"
+          envFrom:
+            - configMapRef:
+                name: {{ include "resilient-platform.fullname" . }}-config
+            - secretRef:
+                name: {{ .Values.postgres.secretName }}
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+        {{- end }}
           volumeMounts:
             - name: {{ include "resilient-platform.fullname" . }}-{{ .Values.postgres.host }}-data
               mountPath: /var/lib/postgresql/data

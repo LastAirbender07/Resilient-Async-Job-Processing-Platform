@@ -43,3 +43,17 @@ spec:
             failureThreshold: {{ .Values.redis.readinessProbe.failureThreshold }}
           resources:
             {{- toYaml .Values.redis.resources | nindent 12 }}
+        {{- if .Values.redis.exporter.enabled }}
+        - name: redis-exporter
+          image: {{ .Values.redis.exporter.image }}
+          ports:
+            - containerPort: {{ .Values.redis.exporter.port }}
+              name: metrics
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+        {{- end }}

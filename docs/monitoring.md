@@ -127,14 +127,15 @@ UP  resilient-platform-frontend
 
 ### Worker Metrics (port 8000)
 
-The worker exposes a Prometheus metrics endpoint on `http://worker-pod:8000/metrics`:
+The worker tracks business-level processing events. Use these "Premium" queries for your main dashboard:
 
-| Metric                        | Type      | Labels                                   | Description             |
-| ----------------------------- | --------- | ---------------------------------------- | ----------------------- |
-| `worker_jobs_total`           | Counter   | `job_type`, `status` (`success`/`error`) | Total jobs processed    |
-| `worker_job_duration_seconds` | Histogram | `job_type`                               | How long each job takes |
+| Panel              | Type        | PromQL                                                                                          |
+| ------------------ | ----------- | ----------------------------------------------------------------------------------------------- |
+| **Job Throughput** | Time Series | `sum(rate(worker_jobs_total[5m])) * 60`                                                         |
+| **Success Rate %** | Gauge       | `sum(rate(worker_jobs_total{status="success"}[5m])) / sum(rate(worker_jobs_total[5m]))`         |
+| **P99 Latency**    | Time Series | `histogram_quantile(0.99, sum(rate(worker_job_duration_seconds_bucket[5m])) by (le, job_type))` |
 
-**Useful PromQL:**
+**Other useful PromQL:**
 
 ```promql
 # Job throughput (per minute, last 5 min)

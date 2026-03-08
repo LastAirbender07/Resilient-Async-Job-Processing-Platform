@@ -15,3 +15,9 @@ spec:
       port: {{ .Values.redis.port }}
       targetPort: {{ .Values.redis.port }}
       protocol: TCP
+    {{- if .Values.redis.exporter.enabled }}
+    - name: {{ include "resilient-platform.fullname" . }}-{{ .Values.redis.host }}-metrics
+      port: {{ .Values.redis.exporter.port }}
+      targetPort: metrics
+      protocol: TCP
+    {{- end }}
