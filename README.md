@@ -6,7 +6,23 @@
 [![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)](https://prometheus.io/)
 
-An **Enterprise-Grade** asynchronous job processing system built for 100% resilience, observability, and security. Designed to handle large file processing (CSV/JSON) with zero data loss, even under cluster-wide failure.
+A resilient asynchronous job processing system built for 100% resilience, observability, and security. Designed to handle large file processing (CSV/JSON) with zero data loss, even under cluster-wide failure.
+
+This project serves as a reference implementation of how to weave modern distributed tools into a "day-2 ready" Kubernetes architecture with **zero glue code**.
+
+---
+
+## ⚖️ How This Compares
+
+While enterprise giants like **Temporal** or **Celery** are the gold standard for complex workflows and general-purpose tasks, this project takes a different, **K8s-Native** approach. 
+
+Standard async setups often require significant "Day 2" effort to bridge the gap between code and infrastructure. This repo avoids that by providing a **pre-baked Security & Observability profile** out of the box—everything is already instrumented for Prometheus, secured with Istio mTLS, and visualized in Grafana from the first minute.
+
+| Solution           | Best for...                                        | The Differentiator                                                                    |
+| :----------------- | :------------------------------------------------- | :------------------------------------------------------------------------------------ |
+| **Temporal.io**    | Complex, long-running workflows with nested state. | **Lighter**: No proprietary SDKs. Uses standard Redis/PostgreSQL.                     |
+| **Celery**         | Standard Python background tasks.                  | **Battery-Included**: Comes with pre-configured ServiceMonitors and Istio exceptions. |
+| **Apache Airflow** | Data pipelines & ETL DAGs.                         | **Real-time**: Built for "fire-and-forget" API jobs rather than batch pipelines.      |
 
 ---
 
